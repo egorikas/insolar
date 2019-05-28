@@ -952,6 +952,7 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 		when                      whenType
 		messagesExpected          []insolar.MessageType
 		errorExpected             bool
+		retryExpected             bool
 		pendingInExecutorResults  message.PendingState
 		queueLenInExecutorResults int
 	}{
@@ -961,8 +962,9 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 			errorExpected: true,
 		},
 		{
-			name: "pulse change in RegisterRequest",
-			when: whenRegisterRequest,
+			name:          "pulse change in RegisterRequest",
+			when:          whenRegisterRequest,
+			retryExpected: true,
 		},
 		{
 			name:                      "pulse change in HasPendingRequests",
@@ -972,8 +974,9 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 			queueLenInExecutorResults: 1,
 		},
 		{
-			name: "pulse change in CallMethod",
-			when: whenCallMethod,
+			name:          "pulse change in CallMethod",
+			when:          whenCallMethod,
+			retryExpected: true,
 			messagesExpected: []insolar.MessageType{
 				insolar.TypeExecutorResults, insolar.TypeReturnResults, insolar.TypePendingFinished, insolar.TypeStillExecuting,
 			},
@@ -1016,6 +1019,12 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 			suite.jc.IsAuthorizedFunc = func(
 				ctx context.Context, role insolar.DynamicRole, id insolar.ID, pnArg insolar.PulseNumber, obj insolar.Reference,
 			) (bool, error) {
+				// TODO AALEKSEEV
+				if test.when == whenCallMethod || test.when == whenRegisterRequest {
+					// Assume IsAuthorized is true before and after retry for both pulses.
+					return true, nil
+				}
+
 				if pnArg == 101 {
 					return false, nil
 				}
@@ -1151,7 +1160,16 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 			suite.lr.FlowDispatcher.ChangePulse(ctx, *pulse)
 			suite.lr.innerFlowDispatcher.ChangePulse(ctx, *pulse)
 
-			_, err := suite.lr.FlowDispatcher.WrapBusHandle(ctx, parcel)
+			var err error
+			_, err = suite.lr.FlowDispatcher.WrapBusHandle(ctx, parcel)
+
+			if err != nil && err.Error() == "Please retry" && test.retryExpected {
+				_, err = suite.lr.FlowDispatcher.WrapBusHandle(ctx, parcel)
+				if err != nil {
+					err = errors.Wrap(err, "AALEKSEEV AFTER RETRY")
+				}
+			}
+
 			// TODO AALEKSEEV fix TestLogicRunnner/TestCallMethodWithOnPulse/pulse_change_in_ReqisterRequest
 			/*
 				var err error
