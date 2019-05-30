@@ -1,10 +1,9 @@
 # Insolar
 
-Enterprise-ready blockchain platform
+Enterprise-ready blockchain platform.
 
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2150/badge)](https://bestpractices.coreinfrastructure.org/projects/2150)
 
-[![Build Status](https://travis-ci.org/insolar/insolar.svg?branch=master)](https://travis-ci.org/insolar/insolar)
 [![GolangCI](https://golangci.com/badges/github.com/insolar/insolar.svg)](https://golangci.com/r/github.com/insolar/insolar/)
 [![Go Report Card](https://goreportcard.com/badge/github.com/insolar/insolar)](https://goreportcard.com/report/github.com/insolar/insolar)
 [![GoDoc](https://godoc.org/github.com/insolar/insolar?status.svg)](https://godoc.org/github.com/insolar/insolar)
@@ -28,8 +27,6 @@ Blockchain network layer.
 * Network routing with a host or host group becoming relays for others hosts.
 * Ability to limit number of gateways to corporate host group via relays to keep the host group secure.
 
-See [package readme](network/dhtnetwork) for more details.
-
 ### [Ledger](ledger)
 
 Record storage engine backed by [BadgerDB](https://github.com/dgraph-io/badger).
@@ -38,7 +35,7 @@ Record storage engine backed by [BadgerDB](https://github.com/dgraph-io/badger).
 
 Various engines for smart contract execution:
 
-* [wasm](vm/wasm) - WebAssembly implementation of smart contracts
+* [wasm](vm/wasm) - WebAssembly implementation of smart contracts.
 
 ### [Application layer](application)
 
@@ -50,25 +47,25 @@ See [package readme](application) for more details.
 
 ### [Configuration](configuration)
 
-Provides configuration params for all Insolar components and helper for config resources management.
+Provides configuration parameters for all Insolar components and a helper for configuration resources management.
 
 ### [Metrics](metrics)
 
-Using Prometheus monitoring system and time series database for collecting and store metrics
+Using Prometheus monitoring system and time series database for collecting and store metrics.
 
 ## Installation
 
-Download Insolar package
+Download the Insolar package:
 
     go get github.com/insolar/insolar
 
-Go to package directory
+Go to the package directory:
 
     cd $GOPATH/src/github.com/insolar/insolar
 
-Install dependencies and build binaries
+Install dependencies and build binaries:
 
-    make install-deps pre-build build
+    make
 
 ### Example
 
@@ -76,30 +73,31 @@ Run launcher:
 
     scripts/insolard/launchnet.sh -g
 
-It will generate genesis data and launch a number of nodes. Default number is 5, you can uncomment more nodes in `scripts/insolard/genesis.yaml`.
+It will generate genesis data and launch a number of nodes. Default number is 5, you can uncomment more nodes in `scripts/insolard/bootstrap/genesis_template.yaml`.
 
-After node processes are started you will see messages like “NODE 3 STARTED in background” in log and PulseWatcher will be started.
+After node processes are started you will see messages like “NODE 3 STARTED in background” in log and a PulseWatcher will be started.
 When you see `Ready` in Insolar State you can run test scripts and benchmarks:
 
     bin/apirequester -k=scripts/insolard/configs/root_member_keys.json -u=http://127.0.0.1:19101/api
 
-This tool runs such scenario: it creates a number of users with wallets, then transfers some money between these users. First time script does it sequentially, second time — concurrently.
+This tool runs a scenario: creates a number of users with wallets and transfers some money between them. For the first time, the script does it sequentially, upon subsequent runs — concurrently.
+
 Options:
-* `-k`: Path to root user keypair. All requests to create new user must be signed by root user.
-* `-u`: Node API URL. By default first node listens on 127.0.0.1:19101. It can be changed in config.
+* `-k`: Path to root user keypair. All requests to create a new user must be signed by the root user.
+* `-u`: Node API URL. By default, the first node listens on the `127.0.0.1:19101` port. It can be changed in configuration.
 
-Run benchmark
+Run benchmark:
 
-    bin/benchmark -c 2 -r 4 -k=scripts/insolard/configs/root_member_keys.json
+    bin/benchmark -c=4 -r=25 -k=.artifacts/launchnet/configs/root_member_keys.json
 
 Options:
 * `-k`: Same as above, path to root user keypair.
 * `-c`: Number of concurrent threads in which requests will be sent.
 * `-r`: Number of transfer requests that will be sent in each thread.
 
-After testing you can stop all nodes by pressing Ctrl+C.
+After testing, you can stop all nodes by pressing Ctrl+C.
 
-#### See [apirequester](cmd/apirequester) and [benchmark](cmd/benchmark) readme for more details
+#### See [apirequester](cmd/apirequester) and [benchmark](cmd/benchmark) readmes for more details.
 
 ## Contributing
 
@@ -107,4 +105,4 @@ See [Contributing Guidelines](.github/CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the terms of the [Apache license 2.0](LICENSE), except for the [Network](network), [NetworkCoordinator](networkcoordinator) and [Consensus](consensus)  subdirectories, which are licensed under the terms of the [Modified BSD 3-Clause Clear License](network/LICENSE.md).
+This project is licensed under the terms of the [Apache license 2.0](LICENSE), except for the [Network](network) subdirectory, which is licensed under the terms of the [Modified BSD 3-Clause Clear License](network/LICENSE.md).

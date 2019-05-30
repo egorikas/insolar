@@ -29,20 +29,24 @@ import (
 	"github.com/pkg/errors"
 )
 
+const insolarLogLevel = "INSOLAR_LOG_LEVEL"
+
 // StartInsgorund starts `insgorund` process
-func StartInsgorund(cmdPath, lProto, listen, upstreamProto, upstreamAddr string) (func(), error) {
+func StartInsgorund(cmdPath, lProto, listen, upstreamProto, upstreamAddr string, notifyLongExecution bool) (func(), error) {
 	id := testutils.RandomString()
 	log.Debug("Starting 'insgorund' ", id)
 
 	stackTrace := (string)(debug.Stack())
 	cancelWarning := make(chan error, 1)
-	go func() {
-		select {
-		case <-time.After(60 * time.Second):
-			fmt.Println("WARN: Too long tests execution. `insgorund` is running for a minute, was started by: \n", stackTrace)
-		case <-cancelWarning:
-		}
-	}()
+	if notifyLongExecution {
+		go func() {
+			select {
+			case <-time.After(60 * time.Second):
+				fmt.Println("WARN: Too long tests execution. `insgorund` is running for a minute, was started by: \n", stackTrace)
+			case <-cancelWarning:
+			}
+		}()
+	}
 	var args []string
 	if listen != "" {
 		args = append(args, "-l", listen)
@@ -64,6 +68,11 @@ func StartInsgorund(cmdPath, lProto, listen, upstreamProto, upstreamAddr string)
 
 	if cmdPath == "" {
 		return nil, errors.New("command's path is required to start `insgorund`")
+	}
+
+	gorundLoglLevel := os.Getenv(insolarLogLevel)
+	if gorundLoglLevel != "" {
+		args = append(args, "--log-level", gorundLoglLevel)
 	}
 
 	runner := exec.Command(cmdPath, args...)

@@ -37,8 +37,6 @@ func getEmptyMessage(mt insolar.MessageType) (insolar.Message, error) {
 	// Logicrunner
 	case insolar.TypeCallMethod:
 		return &CallMethod{}, nil
-	case insolar.TypeCallConstructor:
-		return &CallConstructor{}, nil
 	case insolar.TypeReturnResults:
 		return &ReturnResults{}, nil
 	case insolar.TypeExecutorResults:
@@ -83,8 +81,8 @@ func getEmptyMessage(mt insolar.MessageType) (insolar.Message, error) {
 	// heavy sync
 	case insolar.TypeHeavyPayload:
 		return &HeavyPayload{}, nil
-	// Bootstrap
-	case insolar.TypeBootstrapRequest:
+	// Genesis
+	case insolar.TypeGenesisRequest:
 		return &GenesisRequest{}, nil
 
 	// NodeCert
@@ -182,12 +180,16 @@ func ParcelToBytes(msg insolar.Parcel) []byte {
 	return buf
 }
 
+// ParcelMessageHash returns hash of parcel's message calculated with provided cryptography scheme.
+func ParcelMessageHash(pcs insolar.PlatformCryptographyScheme, parcel insolar.Parcel) []byte {
+	return pcs.IntegrityHasher().Hash(MustSerializeBytes(parcel.Message()))
+}
+
 func init() {
 	// Bootstrap
 	gob.Register(&NodeSignPayload{})
 
 	// Logicrunner
-	gob.Register(&CallConstructor{})
 	gob.Register(&CallMethod{})
 	gob.Register(&ReturnResults{})
 	gob.Register(&ExecutorResults{})

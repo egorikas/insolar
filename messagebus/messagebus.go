@@ -24,7 +24,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/jet"
+	"github.com/insolar/insolar/insolar/payload"
 	"go.opencensus.io/trace"
 
 	"github.com/insolar/insolar/insolar/pulse"
@@ -43,6 +47,10 @@ import (
 
 const deliverRPCMethodName = "MessageBus.Deliver"
 
+var transferredToWatermill = map[insolar.MessageType]struct{}{
+	insolar.TypeGetObject: {},
+}
+
 // MessageBus is component that routes application logic requests,
 // e.g. glue between network and logic runner
 type MessageBus struct {
@@ -54,6 +62,7 @@ type MessageBus struct {
 	DelegationTokenFactory     insolar.DelegationTokenFactory     `inject:""`
 	ParcelFactory              message.ParcelFactory              `inject:""`
 	PulseAccessor              pulse.Accessor                     `inject:""`
+	Sender                     bus.Sender                         `inject:""`
 
 	handlers     map[insolar.MessageType]insolar.MessageHandler
 	signmessages bool
@@ -68,9 +77,9 @@ type MessageBus struct {
 }
 
 func (mb *MessageBus) Acquire(ctx context.Context) {
-	ctx, span := instracer.StartSpan(ctx, "NetworkSwitcher.Acquire")
+	ctx, span := instracer.StartSpan(ctx, "MessageBus.Acquire")
 	defer span.End()
-	inslogger.FromContext(ctx).Info("Call Acquire in NetworkSwitcher: ", mb.counter)
+	inslogger.FromContext(ctx).Info("Call Acquire in MessageBus: ", mb.counter)
 	mb.counter = mb.counter + 1
 	if mb.counter-1 == 0 {
 		inslogger.FromContext(ctx).Info("Lock MB")
@@ -80,9 +89,9 @@ func (mb *MessageBus) Acquire(ctx context.Context) {
 }
 
 func (mb *MessageBus) Release(ctx context.Context) {
-	ctx, span := instracer.StartSpan(ctx, "NetworkSwitcher.Release")
+	ctx, span := instracer.StartSpan(ctx, "MessageBus.Release")
 	defer span.End()
-	inslogger.FromContext(ctx).Info("Call Release in NetworkSwitcher: ", mb.counter)
+	inslogger.FromContext(ctx).Info("Call Release in MessageBus: ", mb.counter)
 	if mb.counter == 0 {
 		panic("Trying to unlock without locking")
 	}
@@ -146,6 +155,38 @@ func (mb *MessageBus) MustRegister(p insolar.MessageType, handler insolar.Messag
 	}
 }
 
+func (mb *MessageBus) createWatermillMessage(ctx context.Context, parcel insolar.Parcel, ops *insolar.MessageSendOptions, currentPulse insolar.Pulse) *watermillMsg.Message {
+	payload := message.ParcelToBytes(parcel)
+	wmMsg := watermillMsg.NewMessage(watermill.NewUUID(), payload)
+
+	wmMsg.Metadata.Set(bus.MetaPulse, fmt.Sprintf("%d", currentPulse.PulseNumber))
+	wmMsg.Metadata.Set(bus.MetaType, parcel.Message().Type().String())
+	wmMsg.Metadata.Set(bus.MetaSender, mb.NodeNetwork.GetOrigin().ID().String())
+	return wmMsg
+}
+
+func (mb *MessageBus) getReceiverNodes(ctx context.Context, parcel insolar.Parcel, currentPulse insolar.Pulse, options *insolar.MessageSendOptions) ([]insolar.Reference, error) {
+	var (
+		nodes []insolar.Reference
+		err   error
+	)
+	if options != nil && options.Receiver != nil {
+		nodes = []insolar.Reference{*options.Receiver}
+	} else {
+		// TODO: send to all actors of the role if nil Target
+		target := parcel.DefaultTarget()
+		// FIXME: @andreyromancev. 21.12.18. Temp hack. All messages should have a default target.
+		if target == nil {
+			target = &insolar.Reference{}
+		}
+		nodes, err = mb.JetCoordinator.QueryRole(ctx, parcel.DefaultRole(), *target.Record(), currentPulse.PulseNumber)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nodes, nil
+}
+
 // Send an `Message` and get a `Value` or error from remote host.
 func (mb *MessageBus) Send(ctx context.Context, msg insolar.Message, ops *insolar.MessageSendOptions) (insolar.Reply, error) {
 	ctx, span := instracer.StartSpan(ctx, "MessageBus.Send "+msg.Type().String())
@@ -161,8 +202,42 @@ func (mb *MessageBus) Send(ctx context.Context, msg insolar.Message, ops *insola
 		return nil, err
 	}
 
+	_, ok := transferredToWatermill[msg.Type()]
+	if ok {
+		wmMsg := mb.createWatermillMessage(ctx, parcel, ops, currentPulse)
+		nodes, err := mb.getReceiverNodes(ctx, parcel, currentPulse, ops)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to calculate role")
+		}
+		res, done := mb.Sender.SendTarget(ctx, wmMsg, nodes[0])
+		repMsg := <-res
+		done()
+		return deserializePayload(repMsg)
+	}
+
 	rep, err := mb.SendParcel(ctx, parcel, currentPulse, ops)
 	return rep, err
+}
+
+func deserializePayload(msg *watermillMsg.Message) (insolar.Reply, error) {
+	meta := payload.Meta{}
+	err := meta.Unmarshal(msg.Payload)
+	if err != nil {
+		return nil, errors.Wrap(err, "can't deserialize meta payload")
+	}
+	if msg.Metadata.Get(bus.MetaType) == bus.TypeError {
+		errReply, err := bus.DeserializeError(bytes.NewBuffer(meta.Payload))
+		if err != nil {
+			return nil, errors.Wrap(err, "can't deserialize payload to error")
+		}
+		return nil, errReply
+	}
+
+	rep, err := reply.Deserialize(bytes.NewBuffer(meta.Payload))
+	if err != nil {
+		return nil, errors.Wrap(err, "can't deserialize payload to reply")
+	}
+	return rep, nil
 }
 
 // CreateParcel creates signed message from provided message.
@@ -184,23 +259,9 @@ func (mb *MessageBus) SendParcel(
 
 	readBarrier(ctx, &mb.globalLock)
 
-	var (
-		nodes []insolar.Reference
-		err   error
-	)
-	if options != nil && options.Receiver != nil {
-		nodes = []insolar.Reference{*options.Receiver}
-	} else {
-		// TODO: send to all actors of the role if nil Target
-		target := parcel.DefaultTarget()
-		// FIXME: @andreyromancev. 21.12.18. Temp hack. All messages should have a default target.
-		if target == nil {
-			target = &insolar.Reference{}
-		}
-		nodes, err = mb.JetCoordinator.QueryRole(ctx, parcel.DefaultRole(), *target.Record(), currentPulse.PulseNumber)
-		if err != nil {
-			return nil, err
-		}
+	nodes, err := mb.getReceiverNodes(ctx, parcel, currentPulse, options)
+	if err != nil {
+		return nil, err
 	}
 
 	start := time.Now()
@@ -321,14 +382,12 @@ func (mb *MessageBus) checkPulse(ctx context.Context, parcel insolar.Parcel, loc
 			*message.UpdateObject,
 			*message.RegisterChild,
 			*message.SetBlob,
-			*message.GetObjectIndex,
 			*message.GetPendingRequests,
 			*message.ValidateRecord,
-			*message.CallConstructor,
 			*message.HotData,
 			*message.CallMethod:
-			inslogger.FromContext(ctx).Errorf("[ checkPulse ] Incorrect message pulse (parcel: %d, current: %d)", ppn, pulse.PulseNumber)
-			return fmt.Errorf("[ checkPulse ] Incorrect message pulse (parcel: %d, current: %d)", ppn, pulse.PulseNumber)
+			inslogger.FromContext(ctx).Errorf("[ checkPulse ] Incorrect message pulse (parcel: %d, current: %d) Msg: %s", ppn, pulse.PulseNumber, parcel.Message().Type().String())
+			return fmt.Errorf("[ checkPulse ] Incorrect message pulse (parcel: %d, current: %d)  Msg: %s", ppn, pulse.PulseNumber, parcel.Message().Type().String())
 		}
 	}
 

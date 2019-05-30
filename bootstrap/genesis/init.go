@@ -19,7 +19,6 @@ package genesis
 import (
 	"context"
 
-	"github.com/insolar/insolar/bootstrap/rootdomain"
 	"github.com/insolar/insolar/component"
 	"github.com/insolar/insolar/configuration"
 	"github.com/insolar/insolar/insolar"
@@ -94,12 +93,12 @@ func (s *Initializer) Run() {
 	checkError(ctx, err, "failed to start components")
 
 	genesisBaseRecord := &genesis.BaseRecord{
-		DB:             sc.storeBadgerDB,
-		DropModifier:   sc.dropDB,
-		PulseAppender:  sc.pulseDB,
-		PulseAccessor:  sc.pulseDB,
-		RecordModifier: sc.recordDB,
-		IndexModifier:  sc.indexDB,
+		DB:                    sc.storeBadgerDB,
+		DropModifier:          sc.dropDB,
+		PulseAppender:         sc.pulseDB,
+		PulseAccessor:         sc.pulseDB,
+		RecordModifier:        sc.recordDB,
+		IndexLifelineModifier: sc.indexDB,
 	}
 	isInit, err := genesisBaseRecord.CreateIfNeeded(ctx)
 	checkError(ctx, err, "failed to start genesis init")
@@ -107,20 +106,18 @@ func (s *Initializer) Run() {
 		artifactManager := &artifact.Scope{
 			PulseNumber: insolar.FirstPulseNumber,
 
-			PlatformCryptographyScheme: bc.PlatformCryptographyScheme,
-			BlobModifier:               sc.blobDB,
-			RecordsModifier:            sc.recordDB,
+			PCS:            bc.PlatformCryptographyScheme,
+			BlobStorage:    sc.blobDB,
+			RecordAccessor: sc.recordDB,
+			RecordModifier: sc.recordDB,
 
-			IndexModifier: sc.indexDB,
-			IndexAccessor: sc.indexDB,
+			LifelineModifier: sc.indexDB,
+			LifelineAccessor: sc.indexDB,
 		}
 
 		genesisGenerator := NewGenerator(
 			genesisConfig,
 			artifactManager,
-			&rootdomain.Record{
-				PCS: bc.PlatformCryptographyScheme,
-			},
 			s.genesisKeyOut,
 		)
 		err = genesisGenerator.Run(ctx)

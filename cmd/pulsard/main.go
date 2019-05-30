@@ -95,7 +95,6 @@ func main() {
 			jconf.AgentEndpoint,
 			jconf.CollectorEndpoint,
 			jconf.ProbabilityRate)
-		ctx = instracer.SetBaggage(ctx, instracer.Entry{Key: "traceid", Value: traceID})
 	}
 	defer jaegerflush()
 
@@ -138,18 +137,13 @@ func initPulsar(ctx context.Context, cfg configuration.Configuration) (*componen
 	cryptographyService := cryptography.NewCryptographyService()
 	keyProcessor := platformpolicy.NewKeyProcessor()
 
-	tp, publicAddress, err := transport.NewTransport(cfg.Pulsar.DistributionTransport)
-	if err != nil {
-		inslogger.FromContext(ctx).Fatal(err)
-	}
-
-	pulseDistributor, err := pulsenetwork.NewDistributor(cfg.Pulsar.PulseDistributor, publicAddress)
+	pulseDistributor, err := pulsenetwork.NewDistributor(cfg.Pulsar.PulseDistributor)
 	if err != nil {
 		inslogger.FromContext(ctx).Fatal(err)
 	}
 
 	cm := &component.Manager{}
-	cm.Register(cryptographyScheme, keyStore, keyProcessor, tp)
+	cm.Register(cryptographyScheme, keyStore, keyProcessor, transport.NewFactory(cfg.Pulsar.DistributionTransport))
 	cm.Inject(cryptographyService, pulseDistributor)
 
 	if err = cm.Init(ctx); err != nil {

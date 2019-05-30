@@ -26,7 +26,7 @@ import (
 )
 
 var (
-	idHex  = "0001000163820cf09ad46a8927b80d87542c11650f91f2bf12372442629c4d73"
+	idHex  = "000100019de3084165685212242201c7383beeb847536602e2baa105b150d3f2"
 	refHex = idHex + idHex
 )
 
@@ -43,6 +43,15 @@ func TestReference(t *testing.T) {
 	}
 	require.Equal(t, refHex, hex.EncodeToString(rootRecord.Ref().Bytes()), "root domain Ref should always be the same")
 
+}
+
+func TestGenesisRef(t *testing.T) {
+	var (
+		pubKey    = "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEf+vsMVU75xH8uj5WRcOqYdHXtaHH\nN0na2RVQ1xbhsVybYPae3ujNHeQCPj+RaJyMVhb6Aj/AOsTTOPFswwIDAQ==\n-----END PUBLIC KEY-----\n"
+		pubKeyRef = "1tJE1DaQwSadLJ1gvD6KubfxmVFu76oNYgrUZa2XFt.1tJDJLGWcX3TCXZMzZodTYWZyJGVdsajgGqyq8Vidw"
+	)
+	genesisRef := GenesisRef(pubKey)
+	require.Equal(t, pubKeyRef, genesisRef.String(), "reference by name always the same")
 }
 
 func initPCS() insolar.PlatformCryptographyScheme {

@@ -55,8 +55,8 @@ import (
 	"time"
 
 	"github.com/insolar/insolar/component"
-	consensus "github.com/insolar/insolar/consensus/packets"
 	"github.com/insolar/insolar/insolar"
+	"github.com/insolar/insolar/network/consensus/packets"
 	"github.com/insolar/insolar/network/hostnetwork/host"
 	"github.com/insolar/insolar/network/hostnetwork/packet/types"
 	"github.com/insolar/insolar/network/node"
@@ -69,11 +69,16 @@ type BootstrapResult struct {
 	NetworkSize       int
 }
 
+//go:generate minimock -i github.com/insolar/insolar/network.Controller -o ../testutils/network -s _mock.go
+
 // Controller contains network logic.
 type Controller interface {
 	component.Initer
-	// SendParcel send message to nodeID.
+
+	// SendMessage send message to nodeID.
 	SendMessage(nodeID insolar.Reference, name string, msg insolar.Parcel) ([]byte, error)
+	// SendBytes send bytes to nodeID.
+	SendBytes(ctx context.Context, nodeID insolar.Reference, name string, msgBytes []byte) ([]byte, error)
 	// RemoteProcedureRegister register remote procedure that will be executed when message is received.
 	RemoteProcedureRegister(name string, method insolar.RemoteProcedure)
 	// SendCascadeMessage sends a message from MessageBus to a cascade of nodes.
@@ -94,18 +99,19 @@ type RequestHandler func(context.Context, Request) (Response, error)
 
 // HostNetwork simple interface to send network requests and process network responses.
 type HostNetwork interface {
+	component.Initer
 	component.Starter
 	component.Stopper
+
 	// PublicAddress returns public address that can be published for all nodes.
 	PublicAddress() string
-	// GetNodeID get current node ID.
-	GetNodeID() insolar.Reference
 
-	// SendRequest send request to a remote node.
+	// SendRequest send request to a remote node addressed by reference.
 	SendRequest(ctx context.Context, request Request, receiver insolar.Reference) (Future, error)
-	// SendRequestToHost send request packet to a remote node.
+	// SendRequestToHost send request packet to a remote host.
 	SendRequestToHost(ctx context.Context, request Request, receiver *host.Host) (Future, error)
 	// RegisterRequestHandler register a handler function to process incoming requests of a specific type.
+	// All RegisterRequestHandler calls should be executed before Start.
 	RegisterRequestHandler(t types.PacketType, handler RequestHandler)
 	// NewRequestBuilder create packet builder for an outgoing request with sender set to current node.
 	NewRequestBuilder() RequestBuilder
@@ -113,21 +119,24 @@ type HostNetwork interface {
 	BuildResponse(ctx context.Context, request Request, responseData interface{}) Response
 }
 
-type ConsensusPacketHandler func(incomingPacket consensus.ConsensusPacket, sender insolar.Reference)
+// ConsensusPacketHandler callback function for consensus packets handling
+type ConsensusPacketHandler func(incomingPacket packets.ConsensusPacket, sender insolar.Reference)
 
 //go:generate minimock -i github.com/insolar/insolar/network.ConsensusNetwork -o ../testutils/network -s _mock.go
+
+// ConsensusNetwork interface to send and handling consensus packets
 type ConsensusNetwork interface {
+	component.Initer
 	component.Starter
 	component.Stopper
+
 	// PublicAddress returns public address that can be published for all nodes.
 	PublicAddress() string
-	// GetNodeID get current node ID.
-	GetNodeID() insolar.Reference
 
 	// SignAndSendPacket send request to a remote node.
-	SignAndSendPacket(packet consensus.ConsensusPacket, receiver insolar.Reference, service insolar.CryptographyService) error
+	SignAndSendPacket(packet packets.ConsensusPacket, receiver insolar.Reference, service insolar.CryptographyService) error
 	// RegisterPacketHandler register a handler function to process incoming requests of a specific type.
-	RegisterPacketHandler(t consensus.PacketType, handler ConsensusPacketHandler)
+	RegisterPacketHandler(t packets.PacketType, handler ConsensusPacketHandler)
 }
 
 // RequestID is 64 bit unsigned int request id.
@@ -150,9 +159,9 @@ type Response Packet
 
 // Future allows to handle responses to a previously sent request.
 type Future interface {
-	GetRequest() Request
+	Request() Request
 	Response() <-chan Response
-	GetResponse(duration time.Duration) (Response, error)
+	WaitResponse(duration time.Duration) (Response, error)
 }
 
 // RequestBuilder allows to build a Request.
@@ -175,8 +184,10 @@ type PulseHandler interface {
 type NodeKeeper interface {
 	insolar.NodeNetwork
 
-	// TODO: remove this interface when bootstrap mechanism completed
-	insolar.SwitcherWorkAround
+	// IsBootstrapped method shows that all DiscoveryNodes finds each other
+	IsBootstrapped() bool
+	// SetIsBootstrapped method set is bootstrap completed
+	SetIsBootstrapped(isBootstrap bool)
 
 	// GetCloudHash returns current cloud hash
 	GetCloudHash() []byte
@@ -188,23 +199,23 @@ type NodeKeeper interface {
 	// TODO: add pulse to the function signature to get data of various pulses
 	GetAccessor() Accessor
 	// GetOriginJoinClaim get origin NodeJoinClaim
-	GetOriginJoinClaim() (*consensus.NodeJoinClaim, error)
+	GetOriginJoinClaim() (*packets.NodeJoinClaim, error)
 	// GetOriginAnnounceClaim get origin NodeAnnounceClaim
-	GetOriginAnnounceClaim(mapper consensus.BitSetMapper) (*consensus.NodeAnnounceClaim, error)
+	GetOriginAnnounceClaim(mapper packets.BitSetMapper) (*packets.NodeAnnounceClaim, error)
 	// GetClaimQueue get the internal queue of claims
 	GetClaimQueue() ClaimQueue
 	// GetSnapshotCopy get copy of the current nodekeeper snapshot
 	GetSnapshotCopy() *node.Snapshot
 	// Sync move unsync -> sync
-	Sync(context.Context, []insolar.NetworkNode, []consensus.ReferendumClaim) error
+	Sync(context.Context, []insolar.NetworkNode, []packets.ReferendumClaim) error
 	// MoveSyncToActive merge sync list with active nodes
 	MoveSyncToActive(ctx context.Context, number insolar.PulseNumber) error
 	// GetConsensusInfo get additional info for the current consensus process
 	GetConsensusInfo() ConsensusInfo
 }
 
-// TODO: refactor code and make it not necessary
 // ConsensusInfo additional info for the current consensus process
+// TODO: refactor code and make it not necessary
 type ConsensusInfo interface {
 	// NodesJoinedDuringPreviousPulse returns true if the last Sync call contained approved Join claims
 	NodesJoinedDuringPreviousPulse() bool
@@ -225,6 +236,8 @@ type PartitionPolicy interface {
 	ShardsCount() int
 }
 
+//go:generate minimock -i github.com/insolar/insolar/network.RoutingTable -o ../testutils/network -s _mock.go
+
 // RoutingTable contains all routing information of the network.
 type RoutingTable interface {
 	// Resolve NodeID -> ShortID, Address. Can initiate network requests.
@@ -239,19 +252,23 @@ type RoutingTable interface {
 	Rebalance(PartitionPolicy)
 }
 
+//go:generate minimock -i github.com/insolar/insolar/network.ClaimQueue -o ../testutils/network -s _mock.go
+
 // ClaimQueue is the queue that contains consensus claims.
 type ClaimQueue interface {
 	// Pop takes claim from the queue.
-	Pop() consensus.ReferendumClaim
+	Pop() packets.ReferendumClaim
 	// Front returns claim from the queue without removing it from the queue.
-	Front() consensus.ReferendumClaim
+	Front() packets.ReferendumClaim
 	// Length returns the length of the queue
 	Length() int
 	// Push adds claim to the queue.
-	Push(claim consensus.ReferendumClaim)
+	Push(claim packets.ReferendumClaim)
 	// Clear removes all claims from queue
 	Clear()
 }
+
+//go:generate minimock -i github.com/insolar/insolar/network.Accessor -o ../testutils/network -s _mock.go
 
 // Accessor is interface that provides read access to nodekeeper internal snapshot
 type Accessor interface {
@@ -277,8 +294,9 @@ type Mutator interface {
 	AddWorkingNode(n insolar.NetworkNode)
 }
 
-// Gatewayer is a network which can change it's Gateway
 //go:generate minimock -i github.com/insolar/insolar/network.Gatewayer -o ../testutils/network -s _mock.go
+
+// Gatewayer is a network which can change it's Gateway
 type Gatewayer interface {
 	Gateway() Gateway
 	SetGateway(Gateway)
@@ -290,4 +308,16 @@ type Gateway interface {
 	GetState() insolar.NetworkState
 	OnPulse(context.Context, insolar.Pulse) error
 	NewGateway(insolar.NetworkState) Gateway
+	Auther() Auther
+}
+
+type Auther interface {
+	// GetCert returns certificate object by node reference, using discovery nodes for signing
+	GetCert(context.Context, *insolar.Reference) (insolar.Certificate, error)
+	// ValidateCert checks certificate signature
+	// TODO make this cert.validate()
+	ValidateCert(context.Context, insolar.AuthorizationCertificate) (bool, error)
+
+	// FilterJoinerNodes returns nodes which allowed to connect to this network in this state.
+	FilterJoinerNodes(certificate insolar.Certificate, nodes []insolar.NetworkNode) []insolar.NetworkNode
 }

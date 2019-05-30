@@ -51,32 +51,41 @@
 package servicenetwork
 
 import (
+	"bytes"
 	"context"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/insolar/insolar/insolar/bus"
+	"github.com/insolar/insolar/insolar/payload"
 	"github.com/pkg/errors"
 	"go.opencensus.io/trace"
 
 	"github.com/insolar/insolar/component"
 	"github.com/insolar/insolar/configuration"
-	"github.com/insolar/insolar/consensus/packets"
-	"github.com/insolar/insolar/consensus/phases"
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/insolar/pulse"
 	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/instrumentation/instracer"
 	"github.com/insolar/insolar/log"
 	"github.com/insolar/insolar/network"
+	"github.com/insolar/insolar/network/consensus/packets"
+	"github.com/insolar/insolar/network/consensus/phases"
 	"github.com/insolar/insolar/network/controller"
 	"github.com/insolar/insolar/network/controller/bootstrap"
 	"github.com/insolar/insolar/network/gateway"
 	"github.com/insolar/insolar/network/hostnetwork"
 	"github.com/insolar/insolar/network/merkle"
 	"github.com/insolar/insolar/network/routing"
+	"github.com/insolar/insolar/network/transport"
 	"github.com/insolar/insolar/network/utils"
 )
+
+const deliverWatermillMsg = "ServiceNetwork.processIncoming"
+
+var ack = []byte{1}
 
 // ServiceNetwork is facade for network.
 type ServiceNetwork struct {
@@ -88,10 +97,12 @@ type ServiceNetwork struct {
 	PulseManager        insolar.PulseManager        `inject:""`
 	PulseAccessor       pulse.Accessor              `inject:""`
 	CryptographyService insolar.CryptographyService `inject:""`
-	NetworkCoordinator  insolar.NetworkCoordinator  `inject:""`
 	NodeKeeper          network.NodeKeeper          `inject:""`
 	TerminationHandler  insolar.TerminationHandler  `inject:""`
 	GIL                 insolar.GlobalInsolarLock   `inject:""`
+	Pub                 message.Publisher           `inject:""`
+	MessageBus          insolar.MessageBus          `inject:""`
+	ContractRequester   insolar.ContractRequester   `inject:""`
 
 	// subcomponents
 	PhaseManager phases.PhaseManager `inject:"subcomponent"`
@@ -113,20 +124,20 @@ func NewServiceNetwork(conf configuration.Configuration, rootCm *component.Manag
 	return serviceNetwork, nil
 }
 
-func (nk *ServiceNetwork) Gateway() network.Gateway {
-	nk.gatewayMu.RLock()
-	defer nk.gatewayMu.RUnlock()
-	return nk.gateway
+func (n *ServiceNetwork) Gateway() network.Gateway {
+	n.gatewayMu.RLock()
+	defer n.gatewayMu.RUnlock()
+	return n.gateway
 }
 
-func (nk *ServiceNetwork) SetGateway(g network.Gateway) {
-	nk.gatewayMu.Lock()
-	defer nk.gatewayMu.Unlock()
-	nk.gateway = g
+func (n *ServiceNetwork) SetGateway(g network.Gateway) {
+	n.gatewayMu.Lock()
+	defer n.gatewayMu.Unlock()
+	n.gateway = g
 }
 
-func (nk *ServiceNetwork) GetState() insolar.NetworkState {
-	return nk.Gateway().GetState()
+func (n *ServiceNetwork) GetState() insolar.NetworkState {
+	return n.Gateway().GetState()
 }
 
 // SendMessage sends a message from MessageBus.
@@ -144,20 +155,14 @@ func (n *ServiceNetwork) RemoteProcedureRegister(name string, method insolar.Rem
 	n.Controller.RemoteProcedureRegister(name, method)
 }
 
-// Start implements component.Initer
+// Init implements component.Initer
 func (n *ServiceNetwork) Init(ctx context.Context) error {
-	hostNetwork, err := hostnetwork.NewHostNetwork(n.cfg, n.CertificateManager.GetCertificate().GetNodeRef().String())
+	hostNetwork, err := hostnetwork.NewHostNetwork(n.CertificateManager.GetCertificate().GetNodeRef().String())
 	if err != nil {
-		return errors.Wrap(err, "Failed to create internal transport")
-	}
-
-	consensusAddress := n.cfg.Host.Transport.Address
-	if n.cfg.Host.Transport.FixedPublicAddress == "" {
-		consensusAddress = n.NodeKeeper.GetOrigin().Address()
+		return errors.Wrap(err, "Failed to create hostnetwork")
 	}
 
 	consensusNetwork, err := hostnetwork.NewConsensusNetwork(
-		consensusAddress,
 		n.CertificateManager.GetCertificate().GetNodeRef().String(),
 		n.NodeKeeper.GetOrigin().ShortID(),
 	)
@@ -173,6 +178,7 @@ func (n *ServiceNetwork) Init(ctx context.Context) error {
 	n.cm.Inject(n,
 		&routing.Table{},
 		cert,
+		transport.NewFactory(n.cfg.Host.Transport),
 		hostNetwork,
 		// use flaky network instead of hostNetwork to imitate network delays
 		// NewFlakyNetwork(hostNetwork),
@@ -189,7 +195,6 @@ func (n *ServiceNetwork) Init(ctx context.Context) error {
 		controller.NewPulseController(),
 		bootstrap.NewBootstrapper(options, n.connectToNewNetwork),
 		bootstrap.NewAuthorizationController(options),
-		bootstrap.NewChallengeResponseController(options),
 		bootstrap.NewNetworkBootstrapper(),
 	)
 	err = n.cm.Init(ctx)
@@ -197,8 +202,13 @@ func (n *ServiceNetwork) Init(ctx context.Context) error {
 		return errors.Wrap(err, "Failed to init internal components")
 	}
 
-	n.gateway = gateway.NewNoNetwork(n, n.GIL, n.NodeKeeper)
-	n.gateway.Run(ctx)
+	if n.Gateway() == nil {
+		n.gateway = gateway.NewNoNetwork(n, n.GIL, n.NodeKeeper, n.ContractRequester,
+			n.CryptographyService, n.MessageBus, n.CertificateManager)
+		n.gateway.Run(ctx)
+		inslogger.FromContext(ctx).Debug("Launch network gateway")
+
+	}
 
 	return nil
 }
@@ -218,6 +228,8 @@ func (n *ServiceNetwork) Start(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to bootstrap network")
 	}
+
+	n.RemoteProcedureRegister(deliverWatermillMsg, n.processIncoming)
 
 	logger.Info("Service network started")
 	return nil
@@ -251,6 +263,7 @@ func (n *ServiceNetwork) Stop(ctx context.Context) error {
 
 func (n *ServiceNetwork) HandlePulse(ctx context.Context, newPulse insolar.Pulse) {
 	pulseTime := time.Unix(0, newPulse.PulseTimestamp)
+	logger := inslogger.FromContext(ctx)
 
 	n.lock.Lock()
 	defer n.lock.Unlock()
@@ -258,8 +271,13 @@ func (n *ServiceNetwork) HandlePulse(ctx context.Context, newPulse insolar.Pulse
 	if n.isGenesis {
 		return
 	}
-	traceID := "pulse_" + strconv.FormatUint(uint64(newPulse.PulseNumber), 10)
-	ctx, logger := inslogger.WithTraceField(ctx, traceID)
+
+	// Because we want to set InsTraceID (it's our custom traceID)
+	// Because @egorikas didn't have enough time for sending `insTraceID` from pulsar
+	// We calculate it 2 times, first time on a pulsar's side. Second time on a network's side
+	insTraceID := "pulse_" + strconv.FormatUint(uint64(newPulse.PulseNumber), 10)
+	ctx = inslogger.ContextWithTrace(ctx, insTraceID)
+
 	logger.Infof("Got new pulse number: %d", newPulse.PulseNumber)
 	ctx, span := instracer.StartSpan(ctx, "ServiceNetwork.Handlepulse")
 	span.AddAttributes(
@@ -319,21 +337,127 @@ func (n *ServiceNetwork) shoudIgnorePulse(newPulse insolar.Pulse) bool {
 func (n *ServiceNetwork) phaseManagerOnPulse(ctx context.Context, newPulse insolar.Pulse, pulseStartTime time.Time) {
 	logger := inslogger.FromContext(ctx)
 
+	if !n.cfg.Service.ConsensusEnabled {
+		logger.Warn("Consensus is disabled")
+		return
+	}
+
 	if err := n.PhaseManager.OnPulse(ctx, &newPulse, pulseStartTime); err != nil {
 		errMsg := "Failed to pass consensus: " + err.Error()
 		logger.Error(errMsg)
-		n.TerminationHandler.Abort(errMsg)
+		n.SetGateway(n.Gateway().NewGateway(insolar.NoNetworkState))
 	}
 }
 
-func (n *ServiceNetwork) connectToNewNetwork(ctx context.Context, node insolar.DiscoveryNode) {
-	err := n.Controller.AuthenticateToDiscoveryNode(ctx, node)
+func (n *ServiceNetwork) connectToNewNetwork(ctx context.Context, address string) {
+	n.NodeKeeper.GetClaimQueue().Push(&packets.ChangeNetworkClaim{Address: address})
+	logger := inslogger.FromContext(ctx)
+
+	node, err := findNodeByAddress(address, n.CertificateManager.GetCertificate().GetDiscoveryNodes())
 	if err != nil {
-		logger := inslogger.FromContext(ctx)
+		logger.Warnf("Failed to find a discovery node: ", err)
+	}
+
+	err = n.Controller.AuthenticateToDiscoveryNode(ctx, node)
+	if err != nil {
 		logger.Errorf("Failed to authenticate a node: " + err.Error())
 	}
 }
 
+// SendMessageHandler async sends message with confirmation of delivery.
+func (n *ServiceNetwork) SendMessageHandler(msg *message.Message) ([]*message.Message, error) {
+	node, err := n.wrapMeta(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to send message")
+	}
+
+	// Short path when sending to self node. Skip serialization
+	origin := n.NodeKeeper.GetOrigin()
+	if node.Equal(origin.ID()) {
+		err := n.Pub.Publish(bus.TopicIncoming, msg)
+		if err != nil {
+			return nil, errors.Wrap(err, "error while publish msg to TopicIncoming")
+		}
+		return nil, nil
+	}
+	msgBytes, err := messageToBytes(msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "error while converting message to bytes")
+	}
+	ctx := inslogger.ContextWithTrace(msg.Context(), msg.Metadata.Get(bus.MetaTraceID))
+	res, err := n.Controller.SendBytes(ctx, node, deliverWatermillMsg, msgBytes)
+	if err != nil {
+		return nil, errors.Wrap(err, "error while sending watermillMsg to controller")
+	}
+	if !bytes.Equal(res, ack) {
+		return nil, errors.Errorf("reply is not ack: %s", res)
+	}
+	return nil, nil
+}
+
+func (n *ServiceNetwork) wrapMeta(msg *message.Message) (insolar.Reference, error) {
+	receiver := msg.Metadata.Get(bus.MetaReceiver)
+	if receiver == "" {
+		return insolar.Reference{}, errors.New("Receiver in msg.Metadata not set")
+	}
+	receiverRef, err := insolar.NewReferenceFromBase58(receiver)
+	if err != nil {
+		return insolar.Reference{}, errors.Wrap(err, "incorrect Receiver in msg.Metadata")
+	}
+
+	latestPulse, err := n.PulseAccessor.Latest(msg.Context())
+	if err != nil {
+		return insolar.Reference{}, errors.Wrap(err, "failed to fetch pulse")
+	}
+	wrapper := payload.Meta{
+		Payload:  msg.Payload,
+		Receiver: *receiverRef,
+		Sender:   n.NodeKeeper.GetOrigin().ID(),
+		Pulse:    latestPulse.PulseNumber,
+	}
+	buf, err := wrapper.Marshal()
+	if err != nil {
+		return insolar.Reference{}, errors.Wrap(err, "failed to wrap message")
+	}
+	msg.Payload = buf
+
+	return *receiverRef, nil
+}
+
+func findNodeByAddress(address string, nodes []insolar.DiscoveryNode) (insolar.DiscoveryNode, error) {
+	for _, node := range nodes {
+		if node.GetHost() == address {
+			return node, nil
+		}
+	}
+	return nil, errors.New("Failed to find a discovery node with address: " + address)
+}
+
 func isNextPulse(currentPulse, newPulse *insolar.Pulse) bool {
 	return newPulse.PulseNumber > currentPulse.PulseNumber && newPulse.PulseNumber >= currentPulse.NextPulseNumber
+}
+
+func (n *ServiceNetwork) processIncoming(ctx context.Context, args [][]byte) ([]byte, error) {
+	logger := inslogger.FromContext(ctx)
+	if len(args) < 1 {
+		err := errors.New("need exactly one argument when n.processIncoming()")
+		logger.Error(err)
+		return nil, err
+	}
+	msg, err := deserializeMessage(bytes.NewBuffer(args[0]))
+	if err != nil {
+		err = errors.Wrap(err, "error while deserialize msg from buffer")
+		logger.Error(err)
+		return nil, err
+	}
+	// TODO: check pulse here
+
+	err = n.Pub.Publish(bus.TopicIncoming, msg)
+	if err != nil {
+		err = errors.Wrap(err, "error while publish msg to TopicIncoming")
+		logger.Error(err)
+		return nil, err
+	}
+
+	return ack, nil
 }

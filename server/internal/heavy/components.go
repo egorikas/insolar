@@ -19,6 +19,16 @@ package heavy
 import (
 	"context"
 
+	"github.com/ThreeDotsLabs/watermill"
+	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/message/infrastructure/gochannel"
+	"github.com/insolar/insolar/log"
+
+	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
+	"github.com/insolar/insolar/instrumentation/inslogger"
+	"github.com/insolar/insolar/internal/ledger/artifact"
+	"github.com/insolar/insolar/ledger/genesis"
+
 	"github.com/insolar/insolar/api"
 	"github.com/insolar/insolar/certificate"
 	"github.com/insolar/insolar/component"
@@ -27,6 +37,7 @@ import (
 	"github.com/insolar/insolar/cryptography"
 	"github.com/insolar/insolar/genesisdataprovider"
 	"github.com/insolar/insolar/insolar"
+	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/delegationtoken"
 	"github.com/insolar/insolar/insolar/jet"
 	"github.com/insolar/insolar/insolar/jetcoordinator"
@@ -46,17 +57,17 @@ import (
 	"github.com/insolar/insolar/network/nodenetwork"
 	"github.com/insolar/insolar/network/servicenetwork"
 	"github.com/insolar/insolar/network/termination"
-	"github.com/insolar/insolar/networkcoordinator"
 	"github.com/insolar/insolar/platformpolicy"
 	"github.com/pkg/errors"
 )
 
 type components struct {
-	cmp               component.Manager
-	NodeRef, NodeRole string
+	cmp      component.Manager
+	NodeRef  string
+	NodeRole string
 }
 
-func newComponents(ctx context.Context, cfg configuration.Configuration) (*components, error) {
+func newComponents(ctx context.Context, cfg configuration.Configuration, genesisCfg insolar.GenesisHeavyConfig) (*components, error) {
 	// Cryptography.
 	var (
 		KeyProcessor  insolar.KeyProcessor
@@ -98,12 +109,14 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 	c.NodeRef = CertManager.GetCertificate().GetNodeRef().String()
 	c.NodeRole = CertManager.GetCertificate().GetRole().String()
 
+	logger := log.NewWatermillLogAdapter(inslogger.FromContext(ctx))
+	pubSub := gochannel.NewGoChannel(gochannel.Config{}, logger)
+
 	// Network.
 	var (
-		NetworkService     insolar.Network
-		NetworkCoordinator insolar.NetworkCoordinator
-		NodeNetwork        insolar.NodeNetwork
-		Termination        insolar.TerminationHandler
+		NetworkService *servicenetwork.ServiceNetwork
+		NodeNetwork    insolar.NodeNetwork
+		Termination    insolar.TerminationHandler
 	)
 	{
 		var err error
@@ -121,10 +134,6 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 			return nil, errors.Wrap(err, "failed to start NodeNetwork")
 		}
 
-		NetworkCoordinator, err = networkcoordinator.New()
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to start NetworkCoordinator")
-		}
 	}
 
 	// API.
@@ -151,11 +160,41 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 		}
 	}
 
+	// Storage.
+	var (
+		Coordinator jet.Coordinator
+		Pulses      *pulse.DB
+		Jets        jet.Storage
+		Nodes       *node.Storage
+		DB          *store.BadgerDB
+	)
+	{
+		var err error
+		DB, err = store.NewBadgerDB(cfg.Ledger.Storage.DataDirectory)
+		if err != nil {
+			panic(errors.Wrap(err, "failed to initialize DB"))
+		}
+		Nodes = node.NewStorage()
+		Pulses = pulse.NewDB(DB)
+		Jets = jet.NewStore()
+
+		c := jetcoordinator.NewJetCoordinator(cfg.Ledger.LightChainLimit)
+		c.PulseCalculator = Pulses
+		c.PulseAccessor = Pulses
+		c.JetAccessor = Jets
+		c.NodeNet = NodeNetwork
+		c.PlatformCryptographyScheme = CryptoScheme
+		c.Nodes = Nodes
+
+		Coordinator = c
+	}
+
 	// Communication.
 	var (
 		Tokens  insolar.DelegationTokenFactory
 		Parcels message.ParcelFactory
 		Bus     insolar.MessageBus
+		WmBus   *bus.Bus
 	)
 	{
 		var err error
@@ -165,6 +204,7 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to start MessageBus")
 		}
+		WmBus = bus.NewBus(pubSub, Pulses, Coordinator)
 	}
 
 	metricsHandler, err := metrics.NewMetrics(
@@ -178,50 +218,31 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 	}
 
 	var (
-		Coordinator  jet.Coordinator
-		Pulses       pulse.Accessor
-		Jets         jet.Storage
-		PulseManager insolar.PulseManager
-		Handler      *handler.Handler
+		PulseManager        insolar.PulseManager
+		Handler             *handler.Handler
+		DiscoveryNodesStore *genesis.Genesis
 	)
 	{
-		conf := cfg.Ledger
-
-		db, err := store.NewBadgerDB(conf.Storage.DataDirectory)
-		if err != nil {
-			panic(errors.Wrap(err, "failed to initialize DB"))
-		}
-
-		pulses := pulse.NewDB(db)
-		records := object.NewRecordDB(db)
-		nodes := node.NewStorage()
-		jets := jet.NewStore()
-		indexes := object.NewIndexDB(db)
-		blobs := blob.NewDB(db)
-		drops := drop.NewDB(db)
-		recordSequence := object.NewSequenceRecordDB(db)
-
-		cord := jetcoordinator.NewJetCoordinator(conf.LightChainLimit)
-		cord.PulseCalculator = pulses
-		cord.PulseAccessor = pulses
-		cord.JetAccessor = jets
-		cord.NodeNet = NodeNetwork
-		cord.PlatformCryptographyScheme = CryptoScheme
-		cord.Nodes = nodes
+		pulses := pulse.NewDB(DB)
+		records := object.NewRecordDB(DB)
+		indexes := object.NewIndexDB(DB)
+		blobs := blob.NewDB(DB)
+		drops := drop.NewDB(DB)
+		recordSequence := object.NewSequenceRecordDB(DB)
 
 		pm := pulsemanager.NewPulseManager()
 		pm.Bus = Bus
 		pm.NodeNet = NodeNetwork
-		pm.NodeSetter = nodes
-		pm.Nodes = nodes
+		pm.NodeSetter = Nodes
+		pm.Nodes = Nodes
 		pm.PulseAppender = pulses
 
 		h := handler.New()
 		h.RecordAccessor = records
 		h.RecordModifier = records
 		h.JetCoordinator = Coordinator
-		h.IndexAccessor = indexes
-		h.IndexModifier = indexes
+		h.IndexLifelineAccessor = indexes
+		h.IndexBucketModifier = indexes
 		h.Bus = Bus
 		h.BlobAccessor = blobs
 		h.BlobModifier = blobs
@@ -229,14 +250,27 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 		h.RecordSequence = recordSequence
 		h.PCS = CryptoScheme
 
-		Coordinator = cord
-		Pulses = pulses
-		Jets = jets
 		PulseManager = pm
 		Handler = h
+
+		artifactManager := &artifact.Scope{
+			PulseNumber:      insolar.FirstPulseNumber,
+			PCS:              CryptoScheme,
+			BlobStorage:      blobs,
+			RecordAccessor:   records,
+			RecordModifier:   records,
+			LifelineModifier: indexes,
+			LifelineAccessor: indexes,
+		}
+		DiscoveryNodesStore = &genesis.Genesis{
+			DiscoveryNodeManager: genesis.NewDiscoveryNodeManager(artifactManager),
+			DiscoveryNodes:       genesisCfg.DiscoveryNodes,
+		}
 	}
 
 	c.cmp.Inject(
+		DB,
+		WmBus,
 		Handler,
 		PulseManager,
 		Jets,
@@ -250,7 +284,6 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 		artifacts.NewClient(),
 		Genesis,
 		API,
-		NetworkCoordinator,
 		KeyProcessor,
 		Termination,
 		CryptoScheme,
@@ -258,11 +291,15 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 		CertManager,
 		NodeNetwork,
 		NetworkService,
+		pubSub,
+		DiscoveryNodesStore,
 	)
 	err = c.cmp.Init(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to init components")
 	}
+
+	startWatermill(ctx, logger, pubSub, WmBus, NetworkService.SendMessageHandler, Handler.Process)
 
 	return c, nil
 }
@@ -273,4 +310,55 @@ func (c *components) Start(ctx context.Context) error {
 
 func (c *components) Stop(ctx context.Context) error {
 	return c.cmp.Stop(ctx)
+}
+
+func startWatermill(
+	ctx context.Context,
+	logger watermill.LoggerAdapter,
+	pubSub watermillMsg.PubSub,
+	b *bus.Bus,
+	outHandler, inHandler watermillMsg.HandlerFunc,
+) {
+	inRouter, err := watermillMsg.NewRouter(watermillMsg.RouterConfig{}, logger)
+	if err != nil {
+		panic(err)
+	}
+	outRouter, err := watermillMsg.NewRouter(watermillMsg.RouterConfig{}, logger)
+	if err != nil {
+		panic(err)
+	}
+
+	outRouter.AddNoPublisherHandler(
+		"OutgoingHandler",
+		bus.TopicOutgoing,
+		pubSub,
+		outHandler,
+	)
+
+	inRouter.AddMiddleware(
+		middleware.InstantAck,
+		b.IncomingMessageRouter,
+		middleware.CorrelationID,
+	)
+
+	inRouter.AddHandler(
+		"IncomingHandler",
+		bus.TopicIncoming,
+		pubSub,
+		bus.TopicOutgoing,
+		pubSub,
+		inHandler,
+	)
+
+	startRouter(ctx, inRouter)
+	startRouter(ctx, outRouter)
+}
+
+func startRouter(ctx context.Context, router *watermillMsg.Router) {
+	go func() {
+		if err := router.Run(); err != nil {
+			inslogger.FromContext(ctx).Error("Error while running router", err)
+		}
+	}()
+	<-router.Running()
 }

@@ -55,7 +55,7 @@ func (pos SequenceRecordPosition) GreaterThan(other SequenceRecordPosition) bool
 type SequenceRecord struct {
 	Position SequenceRecordPosition
 	ID       insolar.ID
-	Record   record.MaterialRecord
+	Record   record.Record
 }
 
 // SequenceRecordAccessor provides access to records by their positions.

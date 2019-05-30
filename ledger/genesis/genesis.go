@@ -33,12 +33,12 @@ import (
 
 // BaseRecord provides methods for genesis base record manipulation.
 type BaseRecord struct {
-	DB             store.DB
-	DropModifier   drop.Modifier
-	PulseAppender  pulse.Appender
-	PulseAccessor  pulse.Accessor
-	RecordModifier object.RecordModifier
-	IndexModifier  object.IndexModifier
+	DB                    store.DB
+	DropModifier          drop.Modifier
+	PulseAppender         pulse.Appender
+	PulseAccessor         pulse.Accessor
+	RecordModifier        object.RecordModifier
+	IndexLifelineModifier object.LifelineModifier
 }
 
 // Key is genesis key.
@@ -98,19 +98,20 @@ func (gi *BaseRecord) CreateIfNeeded(ctx context.Context) (bool, error) {
 		}
 
 		genesisID := insolar.GenesisRecord.ID()
-		rec := record.MaterialRecord{
-			Record: &object.GenesisRecord{
-				VirtualRecord: insolar.GenesisRecord,
-			},
-			JetID: insolar.ZeroJetID,
+		genesisRecord := record.Genesis{Hash: insolar.GenesisRecord}
+		virtRec := record.Wrap(genesisRecord)
+		rec := record.Material{
+			Virtual: &virtRec,
+			JetID:   insolar.ZeroJetID,
 		}
 		err = gi.RecordModifier.Set(ctx, genesisID, rec)
 		if err != nil {
 			return errors.Wrap(err, "can't save genesis record into storage")
 		}
 
-		err = gi.IndexModifier.Set(
+		err = gi.IndexLifelineModifier.Set(
 			ctx,
+			insolar.FirstPulseNumber,
 			genesisID,
 			object.Lifeline{
 				LatestState:         &genesisID,
@@ -139,4 +140,23 @@ func (gi *BaseRecord) CreateIfNeeded(ctx context.Context) (bool, error) {
 	}
 
 	return true, nil
+}
+
+// DiscoveryNodesStore provides interface for persisting discovery nodes.
+type DiscoveryNodesStore interface {
+	// StoreDiscoveryNodes saves discovery nodes on ledger, adds index with them to Node Domain object.
+	//
+	// If Node Domain object already has index - skip all saves.
+	StoreDiscoveryNodes(context.Context, []insolar.DiscoveryNodeRegister) error
+}
+
+type Genesis struct {
+	DiscoveryNodeManager DiscoveryNodesStore
+	DiscoveryNodes       []insolar.DiscoveryNodeRegister
+}
+
+// implements components.Initer
+func (g *Genesis) Init(ctx context.Context) error {
+	inslogger.FromContext(ctx).Info("CALL Genesis.Init()")
+	return g.DiscoveryNodeManager.StoreDiscoveryNodes(ctx, g.DiscoveryNodes)
 }

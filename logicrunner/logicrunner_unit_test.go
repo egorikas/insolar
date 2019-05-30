@@ -21,25 +21,32 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	message2 "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/message/infrastructure/gochannel"
 	"github.com/gojuno/minimock"
-	"github.com/insolar/insolar/insolar"
-	"github.com/insolar/insolar/insolar/jet"
-	"github.com/insolar/insolar/insolar/message"
-	"github.com/insolar/insolar/insolar/pulse"
-	"github.com/insolar/insolar/insolar/reply"
-	"github.com/insolar/insolar/logicrunner/artifacts"
-	"github.com/insolar/insolar/pulsar"
-	"github.com/insolar/insolar/pulsar/entropygenerator"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/insolar/insolar/configuration"
+	"github.com/insolar/insolar/insolar"
+	"github.com/insolar/insolar/insolar/flow"
+	"github.com/insolar/insolar/insolar/flow/bus"
+	"github.com/insolar/insolar/insolar/jet"
+	"github.com/insolar/insolar/insolar/message"
+	"github.com/insolar/insolar/insolar/pulse"
+	"github.com/insolar/insolar/insolar/record"
+	"github.com/insolar/insolar/insolar/reply"
 	"github.com/insolar/insolar/instrumentation/inslogger"
+	"github.com/insolar/insolar/log"
+	"github.com/insolar/insolar/logicrunner/artifacts"
+	"github.com/insolar/insolar/pulsar"
+	"github.com/insolar/insolar/pulsar/entropygenerator"
 	"github.com/insolar/insolar/testutils"
 	"github.com/insolar/insolar/testutils/network"
 )
@@ -86,6 +93,15 @@ func (suite *LogicRunnerCommonTestSuite) SetupLogicRunner() {
 func (suite *LogicRunnerCommonTestSuite) AfterTest(suiteName, testName string) {
 	suite.mc.Wait(time.Minute)
 	suite.mc.Finish()
+	for _, e := range suite.lr.Executors {
+		if e == nil {
+			continue
+		}
+		// e.Stop() is about to be called in lr.Stop() method
+		e.(*testutils.MachineLogicExecutorMock).StopMock.Expect().Return(nil)
+	}
+	// free resources before next test
+	suite.lr.Stop(suite.ctx)
 }
 
 type LogicRunnerTestSuite struct {
@@ -127,29 +143,29 @@ func (suite *LogicRunnerTestSuite) TestPendingFinished() {
 	suite.Require().Equal(message.NotPending, es.pending)
 
 	es.pending = message.InPending
-	es.objectbody = &ObjectBody{}
 	suite.mb.SendMock.ExpectOnce(suite.ctx, &message.PendingFinished{Reference: objectRef}, nil).Return(&reply.ID{}, nil)
 	suite.jc.IsAuthorizedMock.Return(false, nil)
 	suite.lr.finishPendingIfNeeded(suite.ctx, es)
 	suite.Require().Equal(message.NotPending, es.pending)
-	suite.Require().Nil(es.objectbody)
 
 	suite.mc.Wait(time.Minute) // message bus' send is called in a goroutine
 
 	es.pending = message.InPending
-	es.objectbody = &ObjectBody{}
 	suite.jc.IsAuthorizedMock.Return(true, nil)
 	suite.lr.finishPendingIfNeeded(suite.ctx, es)
 	suite.Require().Equal(message.NotPending, es.pending)
-	suite.Require().NotNil(es.objectbody)
 }
 
 func (suite *LogicRunnerTestSuite) TestStartQueueProcessorIfNeeded_DontStartQueueProcessorWhenPending() {
 	es := &ExecutionState{Queue: make([]ExecutionQueueElement, 0), pending: message.InPending}
 	es.Queue = append(es.Queue, ExecutionQueueElement{})
-	err := suite.lr.StartQueueProcessorIfNeeded(
-		suite.ctx, es,
-	)
+
+	s := StartQueueProcessorIfNeeded{
+		es: es,
+	}
+
+	err := s.Present(suite.ctx, nil)
+
 	suite.Require().NoError(err)
 	suite.Require().Equal(message.InPending, es.pending)
 }
@@ -162,7 +178,7 @@ func (suite *LogicRunnerTestSuite) TestCheckPendingRequests() {
 		inState     message.PendingState
 		outState    message.PendingState
 		message     bool
-		messageType insolar.MessageType
+		messageType record.Request_CT
 		amReply     *struct {
 			has bool
 			err error
@@ -183,14 +199,13 @@ func (suite *LogicRunnerTestSuite) TestCheckPendingRequests() {
 			name:        "constructor call",
 			inState:     message.PendingUnknown,
 			message:     true,
-			messageType: insolar.TypeCallConstructor,
+			messageType: record.CTSaveAsChild,
 			outState:    message.NotPending,
 		},
 		{
-			name:        "method call, not pending",
-			inState:     message.PendingUnknown,
-			message:     true,
-			messageType: insolar.TypeCallMethod,
+			name:    "method call, not pending",
+			inState: message.PendingUnknown,
+			message: true,
 			amReply: &struct {
 				has bool
 				err error
@@ -198,10 +213,9 @@ func (suite *LogicRunnerTestSuite) TestCheckPendingRequests() {
 			outState: message.NotPending,
 		},
 		{
-			name:        "method call, in pending",
-			inState:     message.PendingUnknown,
-			message:     true,
-			messageType: insolar.TypeCallMethod,
+			name:    "method call, in pending",
+			inState: message.PendingUnknown,
+			message: true,
 			amReply: &struct {
 				has bool
 				err error
@@ -209,10 +223,9 @@ func (suite *LogicRunnerTestSuite) TestCheckPendingRequests() {
 			outState: message.InPending,
 		},
 		{
-			name:        "method call, in pending",
-			inState:     message.PendingUnknown,
-			message:     true,
-			messageType: insolar.TypeCallMethod,
+			name:    "method call, in pending",
+			inState: message.PendingUnknown,
+			message: true,
 			amReply: &struct {
 				has bool
 				err error
@@ -226,13 +239,19 @@ func (suite *LogicRunnerTestSuite) TestCheckPendingRequests() {
 		suite.T().Run(test.name, func(t *testing.T) {
 			parcel := testutils.NewParcelMock(t)
 			if test.message {
-				parcel.TypeMock.ExpectOnce().Return(test.messageType)
+				parcel.TypeMock.ExpectOnce().Return(insolar.TypeCallMethod)
+				parcel.MessageMock.ExpectOnce().Return(&message.CallMethod{Request: record.Request{CallType: test.messageType}})
 			}
 			es := &ExecutionState{Ref: objectRef, pending: test.inState}
 			if test.amReply != nil {
 				suite.am.HasPendingRequestsMock.Return(test.amReply.has, test.amReply.err)
 			}
-			err := suite.lr.ClarifyPendingState(suite.ctx, es, parcel)
+			proc := ClarifyPendingState{
+				es:              es,
+				parcel:          parcel,
+				ArtifactManager: suite.lr.ArtifactManager,
+			}
+			err := proc.Proceed(suite.ctx)
 			if test.isError {
 				require.Error(t, err)
 			} else {
@@ -245,12 +264,42 @@ func (suite *LogicRunnerTestSuite) TestCheckPendingRequests() {
 	suite.T().Run("method call, AM error", func(t *testing.T) {
 		parcel := testutils.NewParcelMock(t)
 		parcel.TypeMock.Expect().Return(insolar.TypeCallMethod)
+		parcel.MessageMock.ExpectOnce().Return(&message.CallMethod{Request: record.Request{CallType: record.CTMethod}})
 		es := &ExecutionState{Ref: objectRef, pending: message.PendingUnknown}
 		suite.am.HasPendingRequestsMock.Return(false, errors.New("some"))
-		err := suite.lr.ClarifyPendingState(suite.ctx, es, parcel)
+		proc := ClarifyPendingState{
+			es:              es,
+			parcel:          parcel,
+			ArtifactManager: suite.lr.ArtifactManager,
+		}
+		err := proc.Proceed(suite.ctx)
 		require.Error(t, err)
 		require.Equal(t, message.PendingUnknown, es.pending)
 	})
+}
+
+func prepareParcel(t minimock.Tester, msg insolar.Message, needType bool) insolar.Parcel {
+	parcel := testutils.NewParcelMock(t)
+	parcel.MessageMock.Return(msg)
+	if needType {
+		parcel.TypeMock.Return(msg.Type())
+	}
+	return parcel
+}
+
+func prepareWatermill(suite *LogicRunnerTestSuite) (flow.Flow, message2.PubSub) {
+	flowMock := flow.NewFlowMock(suite.mc)
+	flowMock.ProcedureMock.Set(func(p context.Context, p1 flow.Procedure, p2 bool) (r error) {
+		return p1.Proceed(p)
+	})
+	flowMock.HandleMock.Set(func(p context.Context, p1 flow.Handle) (r error) {
+		return p1(p, flowMock)
+	})
+
+	wmLogger := log.NewWatermillLogAdapter(inslogger.FromContext(suite.ctx))
+	pubSub := gochannel.NewGoChannel(gochannel.Config{}, wmLogger)
+
+	return flowMock, pubSub
 }
 
 func (suite *LogicRunnerTestSuite) TestPrepareState() {
@@ -387,7 +436,16 @@ func (suite *LogicRunnerTestSuite) TestPrepareState() {
 				suite.am.HasPendingRequestsMock.Return(true, nil)
 			}
 
-			err := suite.lr.prepareObjectState(suite.ctx, msg)
+			flowMock, pubSub := prepareWatermill(suite)
+			fakeParcel := prepareParcel(suite.mc, msg, false)
+
+			h := HandleExecutorResults{
+				dep:     &Dependencies{Publisher: pubSub, lr: suite.lr},
+				Message: bus.Message{Parcel: fakeParcel, ReplyTo: make(chan bus.Reply)},
+			}
+			err := h.realHandleExecutorState(suite.ctx, flowMock)
+			suite.mc.Wait(time.Minute)
+
 			suite.Require().NoError(err)
 			suite.Require().Equal(test.expected.pending, suite.lr.state[object].ExecutionState.pending)
 			suite.Require().Equal(test.expected.queueLen, len(suite.lr.state[object].ExecutionState.Queue))
@@ -439,11 +497,11 @@ func (suite *LogicRunnerTestSuite) TestCheckExecutionLoop() {
 	ctxB, _ := inslogger.WithTraceField(suite.ctx, "b")
 
 	parcel := testutils.NewParcelMock(suite.mc).MessageMock.Return(
-		&message.CallMethod{ReturnMode: message.ReturnResult},
+		&message.CallMethod{Request: record.Request{ReturnMode: record.ReturnResult}},
 	)
 	es.Current = &CurrentExecution{
-		ReturnMode: message.ReturnResult,
-		Context:    ctxA,
+		Request: &record.Request{ReturnMode: record.ReturnResult},
+		Context: ctxA,
 	}
 
 	loop = suite.lr.CheckExecutionLoop(ctxA, es, parcel)
@@ -453,25 +511,25 @@ func (suite *LogicRunnerTestSuite) TestCheckExecutionLoop() {
 	suite.Require().False(loop)
 
 	parcel = testutils.NewParcelMock(suite.mc).MessageMock.Return(
-		&message.CallMethod{ReturnMode: message.ReturnNoWait},
+		&message.CallMethod{Request: record.Request{ReturnMode: record.ReturnNoWait}},
 	)
 	es.Current = &CurrentExecution{
-		ReturnMode: message.ReturnResult,
-		Context:    ctxA,
+		Request: &record.Request{ReturnMode: record.ReturnResult},
+		Context: ctxA,
 	}
 	loop = suite.lr.CheckExecutionLoop(ctxA, es, parcel)
 	suite.Require().False(loop)
 
 	parcel = testutils.NewParcelMock(suite.mc)
 	es.Current = &CurrentExecution{
-		ReturnMode: message.ReturnNoWait,
-		Context:    ctxA,
+		Request: &record.Request{ReturnMode: record.ReturnNoWait},
+		Context: ctxA,
 	}
 	loop = suite.lr.CheckExecutionLoop(ctxA, es, parcel)
 	suite.Require().False(loop)
 
 	es.Current = &CurrentExecution{
-		ReturnMode: message.ReturnNoWait,
+		Request:    &record.Request{ReturnMode: record.ReturnNoWait},
 		Context:    ctxA,
 		SentResult: true,
 	}
@@ -551,29 +609,43 @@ func (suite *LogicRunnerTestSuite) TestReleaseQueue() {
 }
 
 func (suite *LogicRunnerTestSuite) TestNoExcessiveAmends() {
+	cRef := testutils.RandomRef()
+	cDesc := artifacts.NewCodeDescriptorMock(suite.mc)
+	cDesc.RefMock.Return(&cRef)
+	cDesc.MachineTypeMock.Return(insolar.MachineTypeBuiltin)
+
+	pRef := testutils.RandomRef()
+	pDesc := artifacts.NewObjectDescriptorMock(suite.mc)
+	pDesc.HeadRefMock.Return(&pRef)
+
+	oDesc := artifacts.NewObjectDescriptorMock(suite.mc)
+	oDesc.ParentMock.Return(nil)
+
+	suite.am.GetObjectMock.Return(oDesc, nil)
 	suite.am.UpdateObjectMock.Return(nil, nil)
 
 	randRef := testutils.RandomRef()
 
 	es := &ExecutionState{Queue: make([]ExecutionQueueElement, 0)}
 	es.Queue = append(es.Queue, ExecutionQueueElement{})
-	es.objectbody = &ObjectBody{}
-	es.objectbody.CodeMachineType = insolar.MachineTypeBuiltin
+	es.PrototypeDescriptor = pDesc
+	es.CodeDescriptor = cDesc
 	es.Current = &CurrentExecution{}
 	es.Current.LogicContext = &insolar.LogicCallContext{}
-	es.Current.Request = &randRef
-	es.objectbody.CodeRef = &randRef
+	es.Current.RequestRef = &randRef
 
 	data := []byte(testutils.RandomString())
-	es.objectbody.Object = data
+	oDesc.MemoryMock.Return(data)
 
 	mle := testutils.NewMachineLogicExecutorMock(suite.mc)
 	suite.lr.Executors[insolar.MachineTypeBuiltin] = mle
 	mle.CallMethodMock.Return(data, nil, nil)
 
 	msg := &message.CallMethod{
-		ObjectRef: randRef,
-		Method:    "some",
+		Request: record.Request{
+			Object: &randRef,
+			Method: "some",
+		},
 	}
 
 	// In this case Update isn't send to ledger (objects data/newData are the same)
@@ -600,6 +672,7 @@ func (suite *LogicRunnerTestSuite) TestHandleAbandonedRequestsNotificationMessag
 	_, err := suite.lr.HandleAbandonedRequestsNotificationMessage(suite.ctx, parcel)
 	suite.Require().NoError(err)
 	suite.Equal(true, suite.lr.state[*msg.DefaultTarget()].ExecutionState.LedgerHasMoreRequests)
+	suite.lr.Stop(suite.ctx)
 
 	// LedgerHasMoreRequests false
 	suite.lr, _ = NewLogicRunner(&configuration.LogicRunner{})
@@ -608,6 +681,7 @@ func (suite *LogicRunnerTestSuite) TestHandleAbandonedRequestsNotificationMessag
 	_, err = suite.lr.HandleAbandonedRequestsNotificationMessage(suite.ctx, parcel)
 	suite.Require().NoError(err)
 	suite.Equal(true, suite.lr.state[*msg.DefaultTarget()].ExecutionState.LedgerHasMoreRequests)
+	suite.lr.Stop(suite.ctx)
 
 	// LedgerHasMoreRequests already true
 	suite.lr, _ = NewLogicRunner(&configuration.LogicRunner{})
@@ -616,36 +690,50 @@ func (suite *LogicRunnerTestSuite) TestHandleAbandonedRequestsNotificationMessag
 	_, err = suite.lr.HandleAbandonedRequestsNotificationMessage(suite.ctx, parcel)
 	suite.Require().NoError(err)
 	suite.Equal(true, suite.lr.state[*msg.DefaultTarget()].ExecutionState.LedgerHasMoreRequests)
+	suite.lr.Stop(suite.ctx)
 }
 
 func (suite *LogicRunnerTestSuite) TestPrepareObjectStateChangePendingStatus() {
 	ref := testutils.RandomRef()
 
+	flowMock, pubSub := prepareWatermill(suite)
+	var fakeParcel insolar.Parcel
+	var h HandleExecutorResults
+	var err error
+
 	msg := &message.ExecutorResults{RecordRef: ref}
+	fakeParcel = prepareParcel(suite.mc, msg, false)
+	h = HandleExecutorResults{
+		dep:     &Dependencies{Publisher: pubSub, lr: suite.lr},
+		Message: bus.Message{Parcel: fakeParcel, ReplyTo: make(chan bus.Reply)},
+	}
 
 	// we are in pending and come to ourselves again
 	suite.lr.state[ref] = &ObjectState{ExecutionState: &ExecutionState{
 		pending: message.InPending, Current: &CurrentExecution{}},
 	}
-	err := suite.lr.prepareObjectState(suite.ctx, msg)
+	err = h.realHandleExecutorState(suite.ctx, flowMock)
 	suite.Require().NoError(err)
 	suite.Equal(message.NotPending, suite.lr.state[ref].ExecutionState.pending)
 	suite.Equal(false, suite.lr.state[ref].ExecutionState.PendingConfirmed)
 
 	// previous executor decline pending, trust him
 	msg = &message.ExecutorResults{RecordRef: ref, Pending: message.NotPending}
+	fakeParcel = prepareParcel(suite.mc, msg, false)
+	h = HandleExecutorResults{
+		dep:     &Dependencies{Publisher: pubSub, lr: suite.lr},
+		Message: bus.Message{Parcel: fakeParcel, ReplyTo: make(chan bus.Reply)},
+	}
 	suite.lr.state[ref] = &ObjectState{ExecutionState: &ExecutionState{
 		pending: message.InPending, Current: nil},
 	}
-	err = suite.lr.prepareObjectState(suite.ctx, msg)
+	err = h.realHandleExecutorState(suite.ctx, flowMock)
 	suite.Require().NoError(err)
 	suite.Equal(message.NotPending, suite.lr.state[ref].ExecutionState.pending)
 }
 
 func (suite *LogicRunnerTestSuite) TestPrepareObjectStateChangeLedgerHasMoreRequests() {
 	ref := testutils.RandomRef()
-
-	msg := &message.ExecutorResults{RecordRef: ref}
 
 	type testCase struct {
 		messageStatus             bool
@@ -661,9 +749,27 @@ func (suite *LogicRunnerTestSuite) TestPrepareObjectStateChangeLedgerHasMoreRequ
 	}
 
 	for _, test := range testCases {
-		msg = &message.ExecutorResults{RecordRef: ref, LedgerHasMoreRequests: test.messageStatus, Pending: message.NotPending}
-		suite.lr.state[ref] = &ObjectState{ExecutionState: &ExecutionState{QueueProcessorActive: true, LedgerHasMoreRequests: test.objectStateStatus}}
-		err := suite.lr.prepareObjectState(suite.ctx, msg)
+		msg := &message.ExecutorResults{
+			RecordRef:             ref,
+			LedgerHasMoreRequests: test.messageStatus,
+			Pending:               message.NotPending,
+		}
+
+		flowMock, pubSub := prepareWatermill(suite)
+		fakeParcel := prepareParcel(suite.mc, msg, false)
+
+		h := HandleExecutorResults{
+			dep:     &Dependencies{Publisher: pubSub, lr: suite.lr},
+			Message: bus.Message{Parcel: fakeParcel, ReplyTo: make(chan bus.Reply)},
+		}
+
+		suite.lr.state[ref] = &ObjectState{
+			ExecutionState: &ExecutionState{
+				QueueProcessorActive:  true,
+				LedgerHasMoreRequests: test.objectStateStatus,
+			},
+		}
+		err := h.realHandleExecutorState(suite.ctx, flowMock)
 		suite.Require().NoError(err)
 		suite.Equal(test.expectedObjectStateStatue, suite.lr.state[ref].ExecutionState.LedgerHasMoreRequests)
 	}
@@ -677,6 +783,7 @@ func (suite *LogicRunnerTestSuite) TestNewLogicRunner() {
 	lr, err = NewLogicRunner(&configuration.LogicRunner{})
 	suite.Require().NoError(err)
 	suite.Require().NotNil(lr)
+	lr.Stop(context.Background())
 }
 
 func (suite *LogicRunnerTestSuite) TestStartStop() {
@@ -747,7 +854,7 @@ func (suite *LogicRunnerTestSuite) TestConcurrency() {
 	suite.am.GetCodeMock.Return(cd, nil)
 
 	suite.am.GetObjectFunc = func(
-		ctx context.Context, obj insolar.Reference, st *insolar.ID, approved bool,
+		ctx context.Context, obj insolar.Reference,
 	) (artifacts.ObjectDescriptor, error) {
 		switch obj {
 		case objectRef:
@@ -786,9 +893,11 @@ func (suite *LogicRunnerTestSuite) TestConcurrency() {
 	for i := 0; i < num; i++ {
 		go func(i int) {
 			msg := &message.CallMethod{
-				ObjectRef:      objectRef,
-				Method:         "some",
-				ProxyPrototype: protoRef,
+				Request: record.Request{
+					Prototype: &protoRef,
+					Object:    &objectRef,
+					Method:    "some",
+				},
 			}
 
 			parcel := testutils.NewParcelMock(suite.T())
@@ -820,9 +929,9 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 	notMeRef := testutils.RandomRef()
 	suite.jc.MeMock.Return(meRef)
 
-	pn := 100
+	var pn int32 = 100
 	suite.ps.LatestFunc = func(ctx context.Context) (insolar.Pulse, error) {
-		return insolar.Pulse{PulseNumber: insolar.PulseNumber(pn)}, nil
+		return insolar.Pulse{PulseNumber: insolar.PulseNumber(atomic.LoadInt32(&pn))}, nil
 	}
 
 	mle := testutils.NewMachineLogicExecutorMock(suite.mc)
@@ -875,7 +984,7 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 	for _, test := range table {
 		test := test
 		suite.T().Run(test.name, func(t *testing.T) {
-			pn = 100
+			atomic.StoreInt32(&pn, 100)
 
 			once := sync.Once{}
 
@@ -886,15 +995,15 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 				once.Do(func() {
 					ch = make(chan struct{})
 
-					pn += 1
+					atomic.AddInt32(&pn, 1)
 
 					go func() {
 						defer wg.Done()
 						defer close(ch)
 
-						pulse := insolar.Pulse{PulseNumber: insolar.PulseNumber(pn)}
+						pulse := insolar.Pulse{PulseNumber: insolar.PulseNumber(atomic.LoadInt32(&pn))}
 
-						ctx := inslogger.ContextWithTrace(suite.ctx, "pulse-"+strconv.Itoa(pn))
+						ctx := inslogger.ContextWithTrace(suite.ctx, "pulse-"+strconv.Itoa(int(atomic.LoadInt32(&pn))))
 
 						err := suite.lr.OnPulse(ctx, pulse)
 						suite.Require().NoError(err)
@@ -911,17 +1020,17 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 				}
 
 				if test.when == whenIsAuthorized {
-					changePulse()
-					for pn == 100 {
+					<-changePulse()
+					for atomic.LoadInt32(&pn) == 100 {
 						time.Sleep(time.Millisecond)
 					}
 				}
 
-				return pn == 100, nil
+				return atomic.LoadInt32(&pn) == 100, nil
 			}
 
 			if test.when > whenIsAuthorized {
-				suite.am.RegisterRequestFunc = func(ctx context.Context, r insolar.Reference, msg insolar.Parcel) (*insolar.ID, error) {
+				suite.am.RegisterRequestFunc = func(ctx context.Context, req record.Request) (*insolar.ID, error) {
 					if test.when == whenRegisterRequest {
 						<-changePulse()
 					}
@@ -972,7 +1081,7 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 				cd.RefMock.Return(&codeRef)
 
 				suite.am.GetObjectFunc = func(
-					ctx context.Context, obj insolar.Reference, st *insolar.ID, approved bool,
+					ctx context.Context, obj insolar.Reference,
 				) (artifacts.ObjectDescriptor, error) {
 					switch obj {
 					case objectRef:
@@ -1021,9 +1130,11 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 			}
 
 			msg := &message.CallMethod{
-				ObjectRef:      objectRef,
-				Method:         "some",
-				ProxyPrototype: protoRef,
+				Request: record.Request{
+					Prototype: &protoRef,
+					Object:    &objectRef,
+					Method:    "some",
+				},
 			}
 
 			parcel := testutils.NewParcelMock(suite.T())
@@ -1037,6 +1148,7 @@ func (suite *LogicRunnerTestSuite) TestCallMethodWithOnPulse() {
 
 			pulse := pulsar.NewPulse(1, parcel.Pulse(), &entropygenerator.StandardEntropyGenerator{})
 			suite.lr.FlowDispatcher.ChangePulse(ctx, *pulse)
+			suite.lr.innerFlowDispatcher.ChangePulse(ctx, *pulse)
 			_, err := suite.lr.FlowDispatcher.WrapBusHandle(ctx, parcel)
 			if test.errorExpected {
 				suite.Require().Error(err)
@@ -1250,6 +1362,7 @@ func (s *LogicRunnerOnPulseTestSuite) TestStateTransfer2() {
 			Queue:            make([]ExecutionQueueElement, 0),
 			pending:          message.InPending,
 			PendingConfirmed: false,
+			Ref:              s.objectRef,
 		},
 	}
 
@@ -1444,7 +1557,7 @@ func (s LRUnsafeGetLedgerPendingRequestTestSuite) TestUnsafeGetLedgerPendingRequ
 
 	parcel := &message.Parcel{
 		PulseNumber: s.oldRequestPulseNumber,
-		Msg:         &message.CallMethod{}, // todo add ref
+		Msg:         &message.CallMethod{Request: record.Request{Object: &s.ref}},
 	}
 	s.am.GetPendingRequestMock.Return(parcel, nil)
 

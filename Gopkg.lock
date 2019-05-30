@@ -19,7 +19,7 @@
   revision = "343706a395b76e5ca5c7dca46a5d937b48febc74"
 
 [[projects]]
-  digest = "1:c9ae073450893c4313b42c03e6c440ba65bda6c41c19570cf5b54f49a7ab3df1"
+  digest = "1:742ea97411291dbc55b805043493f6beece4882523f69213d3a4629630ee9500"
   name = "github.com/ThreeDotsLabs/watermill"
   packages = [
     ".",
@@ -27,6 +27,7 @@
     "internal/sync",
     "message",
     "message/infrastructure/gochannel",
+    "message/router/middleware",
   ]
   pruneopts = "UT"
   revision = "fa394272631757fe84b31989cc935122a5fbcb20"
@@ -144,6 +145,14 @@
   pruneopts = "UT"
   revision = "aa810b61a9c79d51363740d207bb46cf8e620ed5"
   version = "v1.2.0"
+
+[[projects]]
+  digest = "1:0bfbe13936953a98ae3cfe8ed6670d396ad81edf069a806d2f6515d7bb6950df"
+  name = "github.com/google/btree"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "4030bb1f1f0c35b30ca7009e9ebd06849dd45306"
+  version = "v1.0.0"
 
 [[projects]]
   branch = "master"
@@ -291,6 +300,14 @@
   version = "v1.2.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:89da0f0574bc94cfd0ac8b59af67bf76cdd110d503df2721006b9f0492394333"
+  name = "github.com/petar/GoLLRB"
+  packages = ["llrb"]
+  pruneopts = "UT"
+  revision = "33fb24c13b99c46c93183c291836c573ac382536"
+
+[[projects]]
   digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
   name = "github.com/pkg/errors"
   packages = ["."]
@@ -360,7 +377,7 @@
   version = "v3.0.3"
 
 [[projects]]
-  digest = "1:2ac83274ed1a4c6faa46983a9199d9def820df889d7e7619f6849991cddc2d2a"
+  digest = "1:ff8c32bee60523e39cd04e58b14fae0c3d6adcbc419e9e0c3d991af0390ab270"
   name = "github.com/rs/zerolog"
   packages = [
     ".",
@@ -368,8 +385,8 @@
     "internal/json",
   ]
   pruneopts = "UT"
-  revision = "3e85c4b21c1adb254dd43a93d93263fbe7d9dc13"
-  version = "v1.14.0"
+  revision = "acf3980132bfcdc48638724e6e3d9e5749b85999"
+  version = "v1.14.3"
 
 [[projects]]
   branch = "master"
@@ -592,17 +609,15 @@
     "github.com/ThreeDotsLabs/watermill",
     "github.com/ThreeDotsLabs/watermill/message",
     "github.com/ThreeDotsLabs/watermill/message/infrastructure/gochannel",
+    "github.com/ThreeDotsLabs/watermill/message/router/middleware",
     "github.com/blang/semver",
     "github.com/dgraph-io/badger",
     "github.com/gogo/protobuf/gogoproto",
     "github.com/gogo/protobuf/proto",
-    "github.com/gogo/protobuf/protoc-gen-gogo/descriptor",
-    "github.com/gogo/protobuf/protoc-gen-gogo/generator",
     "github.com/gogo/protobuf/protoc-gen-gogoslick",
     "github.com/gogo/protobuf/sortkeys",
-    "github.com/gogo/protobuf/vanity",
-    "github.com/gogo/protobuf/vanity/command",
     "github.com/gojuno/minimock",
+    "github.com/google/btree",
     "github.com/google/gofuzz",
     "github.com/gorilla/rpc/v2",
     "github.com/gorilla/rpc/v2/json2",

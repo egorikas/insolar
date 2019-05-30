@@ -18,7 +18,11 @@ package virtual
 
 import (
 	"context"
+	"errors"
 
+	"github.com/ThreeDotsLabs/watermill"
+	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/message/infrastructure/gochannel"
 	"github.com/insolar/insolar/api"
 	"github.com/insolar/insolar/certificate"
 	"github.com/insolar/insolar/component"
@@ -27,12 +31,15 @@ import (
 	"github.com/insolar/insolar/cryptography"
 	"github.com/insolar/insolar/genesisdataprovider"
 	"github.com/insolar/insolar/insolar"
+	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/delegationtoken"
 	"github.com/insolar/insolar/insolar/jet"
 	"github.com/insolar/insolar/insolar/jetcoordinator"
 	"github.com/insolar/insolar/insolar/node"
 	"github.com/insolar/insolar/insolar/pulse"
+	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/keystore"
+	"github.com/insolar/insolar/log"
 	"github.com/insolar/insolar/logicrunner"
 	"github.com/insolar/insolar/logicrunner/artifacts"
 	"github.com/insolar/insolar/logicrunner/pulsemanager"
@@ -41,7 +48,6 @@ import (
 	"github.com/insolar/insolar/network/nodenetwork"
 	"github.com/insolar/insolar/network/servicenetwork"
 	"github.com/insolar/insolar/network/termination"
-	"github.com/insolar/insolar/networkcoordinator"
 	"github.com/insolar/insolar/platformpolicy"
 	"github.com/insolar/insolar/pulsar"
 	"github.com/insolar/insolar/pulsar/entropygenerator"
@@ -114,6 +120,9 @@ func initComponents(
 ) (*component.Manager, insolar.TerminationHandler, error) {
 	cm := component.Manager{}
 
+	logger := log.NewWatermillLogAdapter(inslogger.FromContext(ctx))
+	pubsub := gochannel.NewGoChannel(gochannel.Config{}, logger)
+
 	nodeNetwork, err := nodenetwork.NewNodeNetwork(cfg.Host.Transport, certManager.GetCertificate())
 	checkError(ctx, err, "failed to start NodeNetwork")
 
@@ -143,9 +152,6 @@ func initComponents(
 	metricsHandler, err := metrics.NewMetrics(ctx, cfg.Metrics, metrics.GetInsolarRegistry("virtual"), "virtual")
 	checkError(ctx, err, "failed to start Metrics")
 
-	networkCoordinator, err := networkcoordinator.New()
-	checkError(ctx, err, "failed to start NetworkCoordinator")
-
 	_, err = manager.NewVersionManager(cfg.VersionManager)
 	checkError(ctx, err, "failed to load VersionManager: ")
 
@@ -160,19 +166,25 @@ func initComponents(
 		cryptographyService,
 		keyProcessor,
 		certManager,
+		logicRunner,
 		nodeNetwork,
 		nw,
 		pulsemanager.NewPulseManager(),
 	)
 
+	jc := jetcoordinator.NewJetCoordinator(cfg.Ledger.LightChainLimit)
+	pulses := pulse.NewStorageMem()
+	b := bus.NewBus(pubsub, pulses, jc)
+
 	components := []interface{}{
+		b,
+		pubsub,
 		messageBus,
 		contractRequester,
-		logicRunner,
 		artifacts.NewClient(),
-		pulse.NewStorageMem(),
+		jc,
+		pulses,
 		jet.NewStore(),
-		jetcoordinator.NewJetCoordinator(cfg.Ledger.LightChainLimit),
 		node.NewStorage(),
 		delegationTokenFactory,
 		parcelFactory,
@@ -181,12 +193,64 @@ func initComponents(
 		genesisDataProvider,
 		apiRunner,
 		metricsHandler,
-		networkCoordinator,
 		cryptographyService,
 		keyProcessor,
 	}...)
 
 	cm.Inject(components...)
 
+	startWatermill(ctx, logger, pubsub, b, nw.SendMessageHandler, notFound)
+
 	return &cm, terminationHandler, nil
+}
+
+func notFound(msg *watermillMsg.Message) ([]*watermillMsg.Message, error) {
+	return nil, errors.New("reply channel for this msg doesn't exist")
+}
+
+func startWatermill(
+	ctx context.Context,
+	logger watermill.LoggerAdapter,
+	pubSub watermillMsg.Subscriber,
+	b *bus.Bus,
+	outHandler, inHandler watermillMsg.HandlerFunc,
+) {
+	inRouter, err := watermillMsg.NewRouter(watermillMsg.RouterConfig{}, logger)
+	if err != nil {
+		panic(err)
+	}
+	outRouter, err := watermillMsg.NewRouter(watermillMsg.RouterConfig{}, logger)
+	if err != nil {
+		panic(err)
+	}
+
+	outRouter.AddNoPublisherHandler(
+		"OutgoingHandler",
+		bus.TopicOutgoing,
+		pubSub,
+		outHandler,
+	)
+
+	inRouter.AddMiddleware(
+		b.IncomingMessageRouter,
+	)
+
+	inRouter.AddNoPublisherHandler(
+		"IncomingHandler",
+		bus.TopicIncoming,
+		pubSub,
+		inHandler,
+	)
+
+	startRouter(ctx, inRouter)
+	startRouter(ctx, outRouter)
+}
+
+func startRouter(ctx context.Context, router *watermillMsg.Router) {
+	go func() {
+		if err := router.Run(); err != nil {
+			inslogger.FromContext(ctx).Error("Error while running router", err)
+		}
+	}()
+	<-router.Running()
 }

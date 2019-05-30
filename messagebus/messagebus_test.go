@@ -18,10 +18,19 @@ package messagebus
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/insolar/insolar/insolar/payload"
+	"github.com/insolar/insolar/insolar/reply"
+	"github.com/pkg/errors"
+
+	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/jet"
 	"github.com/insolar/insolar/insolar/pulse"
 	"github.com/stretchr/testify/require"
@@ -48,12 +57,17 @@ func testHandler(_ context.Context, _ insolar.Parcel) (insolar.Reply, error) {
 	return testReply, nil
 }
 
-func prepare(t *testing.T, ctx context.Context, currentPulse int, msgPulse int) (*MessageBus, *pulse.AccessorMock, insolar.Parcel) {
+func prepare(t *testing.T, ctx context.Context, currentPulse int, msgPulse int) (*MessageBus, *pulse.AccessorMock, insolar.Parcel, insolar.Reference) {
 	mb, err := NewMessageBus(configuration.Configuration{})
 	require.NoError(t, err)
 
 	net := testutils.GetTestNetwork(t)
 	jc := jet.NewCoordinatorMock(t)
+	expectedRef := testutils.RandomRef()
+	jc.QueryRoleFunc = func(p context.Context, p1 insolar.DynamicRole, p2 insolar.ID, p3 insolar.PulseNumber) (r []insolar.Reference, r1 error) {
+		return []insolar.Reference{expectedRef}, nil
+	}
+
 	nn := network.NewNodeNetworkMock(t)
 	nn.GetOriginFunc = func() (r insolar.NetworkNode) {
 		n := network.NewNetworkNodeMock(t)
@@ -63,11 +77,17 @@ func prepare(t *testing.T, ctx context.Context, currentPulse int, msgPulse int) 
 
 	pcs := testutils.NewPlatformCryptographyScheme()
 	cs := testutils.NewCryptographyServiceMock(t)
+	cs.SignFunc = func(p []byte) (r *insolar.Signature, r1 error) {
+		return &insolar.Signature{}, nil
+	}
+
 	dtf := testutils.NewDelegationTokenFactoryMock(t)
 	pf := NewParcelFactory()
 	ps := pulse.NewAccessorMock(t)
 
-	(&component.Manager{}).Inject(net, jc, nn, pcs, cs, dtf, pf, ps, mb)
+	b := bus.NewSenderMock(t)
+
+	(&component.Manager{}).Inject(net, jc, nn, pcs, cs, dtf, pf, ps, mb, b)
 
 	ps.LatestFunc = func(ctx context.Context) (insolar.Pulse, error) {
 		return insolar.Pulse{
@@ -94,12 +114,12 @@ func prepare(t *testing.T, ctx context.Context, currentPulse int, msgPulse int) 
 
 	mb.Unlock(ctx)
 
-	return mb, ps, parcel
+	return mb, ps, parcel, expectedRef
 }
 
 func TestMessageBus_doDeliver_PrevPulse(t *testing.T) {
 	ctx := context.Background()
-	mb, _, parcel := prepare(t, ctx, 100, 99)
+	mb, _, parcel, _ := prepare(t, ctx, 100, 99)
 
 	result, err := mb.doDeliver(ctx, parcel)
 	require.Error(t, err)
@@ -108,7 +128,7 @@ func TestMessageBus_doDeliver_PrevPulse(t *testing.T) {
 
 func TestMessageBus_doDeliver_SamePulse(t *testing.T) {
 	ctx := context.Background()
-	mb, _, parcel := prepare(t, ctx, 100, 100)
+	mb, _, parcel, _ := prepare(t, ctx, 100, 100)
 
 	result, err := mb.doDeliver(ctx, parcel)
 	require.NoError(t, err)
@@ -117,7 +137,7 @@ func TestMessageBus_doDeliver_SamePulse(t *testing.T) {
 
 func TestMessageBus_doDeliver_NextPulse(t *testing.T) {
 	ctx := context.Background()
-	mb, ps, parcel := prepare(t, ctx, 100, 101)
+	mb, ps, parcel, _ := prepare(t, ctx, 100, 101)
 
 	pulseUpdated := false
 
@@ -151,21 +171,27 @@ func TestMessageBus_doDeliver_NextPulse(t *testing.T) {
 
 func TestMessageBus_doDeliver_TwoAheadPulses(t *testing.T) {
 	ctx := context.Background()
-	mb, ps, parcel := prepare(t, ctx, 100, 102)
+	mb, ps, parcel, _ := prepare(t, ctx, 100, 102)
 
+	var mu sync.Mutex
 	pulse := &insolar.Pulse{
 		PulseNumber:     100,
 		NextPulseNumber: 101,
 	}
 	ps.LatestFunc = func(ctx context.Context) (insolar.Pulse, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
 		return *pulse, nil
 	}
 	go func() {
 		for i := 1; i <= 2; i++ {
+			mu.Lock()
 			pulse = &insolar.Pulse{
 				PulseNumber:     insolar.PulseNumber(100 + i),
 				NextPulseNumber: insolar.PulseNumber(100 + i + 1),
 			}
+			mu.Unlock()
 			err := mb.OnPulse(ctx, *pulse)
 			require.NoError(t, err)
 		}
@@ -174,4 +200,96 @@ func TestMessageBus_doDeliver_TwoAheadPulses(t *testing.T) {
 	_, err := mb.doDeliver(ctx, parcel)
 	require.NoError(t, err)
 	require.Equal(t, insolar.PulseNumber(102), pulse.PulseNumber)
+}
+
+func TestMessageBus_createWatermillMessage(t *testing.T) {
+	ctx := context.Background()
+	mb, _, _, _ := prepare(t, ctx, 100, 100)
+
+	pulse := insolar.Pulse{
+		PulseNumber: insolar.PulseNumber(100),
+	}
+	parcel := &message.Parcel{
+		Msg: &message.GetObject{},
+	}
+
+	msg := mb.createWatermillMessage(ctx, parcel, nil, pulse)
+
+	require.NotNil(t, msg)
+	require.NotNil(t, msg.Payload)
+	require.Equal(t, fmt.Sprintf("%d", pulse.PulseNumber), msg.Metadata.Get(bus.MetaPulse))
+	require.Equal(t, parcel.Msg.Type().String(), msg.Metadata.Get(bus.MetaType))
+	require.Equal(t, insolar.Reference{}.String(), msg.Metadata.Get(bus.MetaSender))
+}
+
+func TestMessageBus_deserializePayload_GetReply(t *testing.T) {
+	rep := &reply.OK{}
+	pl := reply.ToBytes(rep)
+	meta := payload.Meta{
+		Payload: pl,
+	}
+	buf, err := meta.Marshal()
+	require.NoError(t, err)
+	msg := watermillMsg.NewMessage(watermill.NewUUID(), buf)
+	msg.Metadata.Set(bus.MetaType, string(rep.Type()))
+
+	r, err := deserializePayload(msg)
+
+	require.NoError(t, err)
+	require.Equal(t, rep, r)
+}
+
+func TestMessageBus_deserializePayload_GetError(t *testing.T) {
+	rep := errors.New("test error for deserializePayload")
+	pl, err := bus.ErrorToBytes(rep)
+	require.NoError(t, err)
+	meta := payload.Meta{
+		Payload: pl,
+	}
+	buf, err := meta.Marshal()
+	require.NoError(t, err)
+	msg := watermillMsg.NewMessage(watermill.NewUUID(), buf)
+	msg.Metadata.Set(bus.MetaType, bus.TypeError)
+
+	r, err := deserializePayload(msg)
+
+	require.Equal(t, rep.Error(), err.Error())
+	require.Nil(t, r)
+}
+
+func TestMessageBus_deserializePayload_GetReply_WrongBytes(t *testing.T) {
+	rep := errors.New("test error for deserializePayload")
+	pl, err := bus.ErrorToBytes(rep)
+	require.NoError(t, err)
+	meta := payload.Meta{
+		Payload: pl,
+	}
+	buf, err := meta.Marshal()
+	require.NoError(t, err)
+	msg := watermillMsg.NewMessage(watermill.NewUUID(), buf)
+	msg.Metadata.Set(bus.MetaType, string(testReply.Type()))
+
+	r, err := deserializePayload(msg)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "can't deserialize payload to reply")
+	require.Nil(t, r)
+}
+
+func TestMessageBus_deserializePayload_GetError_WrongBytes(t *testing.T) {
+	rep := &reply.OK{}
+	pl := reply.ToBytes(rep)
+	meta := payload.Meta{
+		Payload: pl,
+	}
+	buf, err := meta.Marshal()
+	require.NoError(t, err)
+	msg := watermillMsg.NewMessage(watermill.NewUUID(), buf)
+	msg.Metadata.Set(bus.MetaType, bus.TypeError)
+
+	r, err := deserializePayload(msg)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "can't deserialize payload to error")
+	require.Nil(t, r)
 }

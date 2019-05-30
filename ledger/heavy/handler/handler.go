@@ -17,10 +17,17 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
+	"github.com/ThreeDotsLabs/watermill"
+	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
+	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/jet"
+	"github.com/insolar/insolar/insolar/payload"
+	"github.com/insolar/insolar/insolar/record"
+	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/ledger/blob"
 	"github.com/insolar/insolar/ledger/drop"
 	"github.com/pkg/errors"
@@ -32,35 +39,80 @@ import (
 	"github.com/insolar/insolar/ledger/object"
 )
 
+// Handler is a base struct for heavy's methods
 type Handler struct {
-	Bus            insolar.MessageBus
-	JetCoordinator jet.Coordinator
-	PCS            insolar.PlatformCryptographyScheme
-	BlobAccessor   blob.Accessor
-	BlobModifier   blob.Modifier
-	RecordAccessor object.RecordAccessor
-	RecordModifier object.RecordModifier
-	IndexAccessor  object.IndexAccessor
-	IndexModifier  object.IndexModifier
-	DropModifier   drop.Modifier
-	RecordSequence object.SequenceRecordModifier
+	WmBus                 bus.Bus
+	Bus                   insolar.MessageBus
+	JetCoordinator        jet.Coordinator
+	PCS                   insolar.PlatformCryptographyScheme
+	BlobAccessor          blob.Accessor
+	BlobModifier          blob.Modifier
+	RecordAccessor        object.RecordAccessor
+	RecordModifier        object.RecordModifier
+	IndexLifelineAccessor object.LifelineAccessor
+	IndexBucketModifier   object.IndexBucketModifier
+	DropModifier          drop.Modifier
+	RecordSequence        object.SequenceRecordModifier
 
 	jetID insolar.JetID
 }
 
-// NewMessageHandler creates new handler.
+// New creates a new handler.
 func New() *Handler {
 	return &Handler{
 		jetID: *insolar.NewJetID(0, nil),
 	}
 }
 
+func (h *Handler) Process(msg *watermillMsg.Message) ([]*watermillMsg.Message, error) {
+	ctx, _ := inslogger.WithField(msg.Context(), "pulse", msg.Metadata.Get(bus.MetaPulse))
+	ctx = inslogger.ContextWithTrace(ctx, msg.Metadata.Get(bus.MetaTraceID))
+
+	rep, err := h.handle(ctx, msg)
+
+	var resInBytes []byte
+	var replyType string
+	if err != nil {
+		resInBytes, err = bus.ErrorToBytes(err)
+		if err != nil {
+			return nil, errors.Wrap(err, "can't convert error to bytes")
+		}
+		replyType = bus.TypeError
+	} else {
+		resInBytes = reply.ToBytes(rep)
+		replyType = string(rep.Type())
+	}
+	resAsMsg := watermillMsg.NewMessage(watermill.NewUUID(), resInBytes)
+	resAsMsg.Metadata.Set(bus.MetaType, replyType)
+	receiver := msg.Metadata.Get(bus.MetaSender)
+	resAsMsg.Metadata.Set(bus.MetaReceiver, receiver)
+	resAsMsg.Metadata.Set(bus.MetaTraceID, msg.Metadata.Get(bus.MetaTraceID))
+	return []*watermillMsg.Message{resAsMsg}, nil
+}
+
+func (h *Handler) handle(ctx context.Context, msg *watermillMsg.Message) (insolar.Reply, error) {
+	switch msg.Metadata.Get(bus.MetaType) {
+	case insolar.TypeGetObject.String():
+		meta := payload.Meta{}
+		err := meta.Unmarshal(msg.Payload)
+		if err != nil {
+			return nil, errors.Wrap(err, "can't deserialize meta payload")
+		}
+		parcel, err := message.DeserializeParcel(bytes.NewBuffer(meta.Payload))
+		if err != nil {
+			return nil, errors.Wrap(err, "can't deserialize payload")
+		}
+		return h.handleGetObject(ctx, parcel)
+
+	default:
+		return nil, fmt.Errorf("no handler for message type %s", msg.Metadata.Get(bus.MetaType))
+	}
+}
+
 func (h *Handler) Init(ctx context.Context) error {
-	// h.Bus.MustRegister(insolar.TypeHeavyStartStop, h.handleHeavyStartStop)
 	h.Bus.MustRegister(insolar.TypeHeavyPayload, h.handleHeavyPayload)
 
 	h.Bus.MustRegister(insolar.TypeGetCode, h.handleGetCode)
-	h.Bus.MustRegister(insolar.TypeGetObject, h.handleGetObject)
 	h.Bus.MustRegister(insolar.TypeGetDelegate, h.handleGetDelegate)
 	h.Bus.MustRegister(insolar.TypeGetChildren, h.handleGetChildren)
 	h.Bus.MustRegister(insolar.TypeGetObjectIndex, h.handleGetObjectIndex)
@@ -76,7 +128,7 @@ func (h *Handler) handleGetCode(ctx context.Context, parcel insolar.Parcel) (ins
 		return nil, err
 	}
 
-	code, err := h.BlobAccessor.ForID(ctx, *codeRec.Code)
+	code, err := h.BlobAccessor.ForID(ctx, codeRec.Code)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch code blob")
 	}
@@ -95,7 +147,7 @@ func (h *Handler) handleGetObject(
 	msg := parcel.Message().(*message.GetObject)
 
 	// Fetch object index. If not found redirect.
-	idx, err := h.IndexAccessor.ForID(ctx, *msg.Head.Record())
+	idx, err := h.IndexLifelineAccessor.ForID(ctx, parcel.Pulse(), *msg.Head.Record())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to fetch object index for %s", msg.Head.Record().DebugString())
 	}
@@ -105,11 +157,7 @@ func (h *Handler) handleGetObject(
 	if msg.State != nil {
 		stateID = msg.State
 	} else {
-		if msg.Approved {
-			stateID = idx.LatestStateApproved
-		} else {
-			stateID = idx.LatestState
-		}
+		stateID = idx.LatestState
 	}
 	if stateID == nil {
 		return &reply.Error{ErrType: reply.ErrStateNotAvailable}, nil
@@ -121,29 +169,26 @@ func (h *Handler) handleGetObject(
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to fetch state %s for %s", stateID.DebugString(), msg.Head.Record()))
 	}
 
-	virtRec := rec.Record
-	state, ok := virtRec.(object.State)
+	virtRec := rec.Virtual
+	concrete := record.Unwrap(virtRec)
+	state, ok := concrete.(record.State)
 	if !ok {
 		return nil, errors.New("invalid object record")
 	}
-	if state.ID() == object.StateDeactivation {
+	if state.ID() == record.StateDeactivation {
 		return &reply.Error{ErrType: reply.ErrDeactivated}, nil
 	}
 
-	var childPointer *insolar.ID
-	if idx.ChildPointer != nil {
-		childPointer = idx.ChildPointer
-	}
 	rep := reply.Object{
 		Head:         msg.Head,
 		State:        *stateID,
 		Prototype:    state.GetImage(),
 		IsPrototype:  state.GetIsPrototype(),
-		ChildPointer: childPointer,
+		ChildPointer: idx.ChildPointer,
 		Parent:       idx.Parent,
 	}
 
-	if state.GetMemory() != nil {
+	if state.GetMemory() != nil && state.GetMemory().NotEmpty() {
 		b, err := h.BlobAccessor.ForID(ctx, *state.GetMemory())
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to fetch blob")
@@ -157,12 +202,12 @@ func (h *Handler) handleGetObject(
 func (h *Handler) handleGetDelegate(ctx context.Context, parcel insolar.Parcel) (insolar.Reply, error) {
 	msg := parcel.Message().(*message.GetDelegate)
 
-	idx, err := h.IndexAccessor.ForID(ctx, *msg.Head.Record())
+	idx, err := h.IndexLifelineAccessor.ForID(ctx, parcel.Pulse(), *msg.Head.Record())
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to fetch index for %v", msg.Head.Record()))
 	}
 
-	delegateRef, ok := idx.Delegates[msg.AsType]
+	delegateRef, ok := idx.DelegateByKey(msg.AsType)
 	if !ok {
 		return nil, errors.New("the object has no delegate for this type")
 	}
@@ -178,7 +223,7 @@ func (h *Handler) handleGetChildren(
 ) (insolar.Reply, error) {
 	msg := parcel.Message().(*message.GetChildren)
 
-	idx, err := h.IndexAccessor.ForID(ctx, *msg.Parent.Record())
+	idx, err := h.IndexLifelineAccessor.ForID(ctx, parcel.Pulse(), *msg.Parent.Record())
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("failed to fetch index for %v", msg.Parent.Record()))
 	}
@@ -229,12 +274,14 @@ func (h *Handler) handleGetChildren(
 			return nil, errors.New("failed to retrieve children")
 		}
 
-		virtRec := rec.Record
-		childRec, ok := virtRec.(*object.ChildRecord)
+		virtRec := rec.Virtual
+		concrete := record.Unwrap(virtRec)
+		childRec, ok := concrete.(*record.Child)
 		if !ok {
 			return nil, errors.New("failed to retrieve children")
 		}
-		currentChild = childRec.PrevChild
+
+		currentChild = &childRec.PrevChild
 
 		// Skip records later than specified pulse.
 		recPulse := childRec.Ref.Record().Pulse()
@@ -255,15 +302,21 @@ func (h *Handler) handleGetRequest(ctx context.Context, parcel insolar.Parcel) (
 		return nil, errors.New("failed to fetch request")
 	}
 
-	virtRec := rec.Record
-	req, ok := virtRec.(*object.RequestRecord)
+	virtRec := rec.Virtual
+	concrete := record.Unwrap(virtRec)
+	_, ok := concrete.(*record.Request)
 	if !ok {
 		return nil, errors.New("failed to decode request")
 	}
 
+	data, err := virtRec.Marshal()
+	if err != nil {
+		return nil, errors.New("failed to serialize request")
+	}
+
 	rep := reply.Request{
 		ID:     msg.Request,
-		Record: object.EncodeVirtual(req),
+		Record: data,
 	}
 
 	return &rep, nil
@@ -272,7 +325,7 @@ func (h *Handler) handleGetRequest(ctx context.Context, parcel insolar.Parcel) (
 func (h *Handler) handleGetObjectIndex(ctx context.Context, parcel insolar.Parcel) (insolar.Reply, error) {
 	msg := parcel.Message().(*message.GetObjectIndex)
 
-	idx, err := h.IndexAccessor.ForID(ctx, *msg.Object.Record())
+	idx, err := h.IndexLifelineAccessor.ForID(ctx, parcel.Pulse(), *msg.Object.Record())
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch object index")
 	}
@@ -282,26 +335,27 @@ func (h *Handler) handleGetObjectIndex(ctx context.Context, parcel insolar.Parce
 	return &reply.ObjectIndex{Index: buf}, nil
 }
 
-func (h *Handler) getCode(ctx context.Context, id *insolar.ID) (*object.CodeRecord, error) {
+func (h *Handler) getCode(ctx context.Context, id *insolar.ID) (record.Code, error) {
 	rec, err := h.RecordAccessor.ForID(ctx, *id)
 	if err != nil {
-		return nil, errors.Wrap(err, "can't get record from storage")
+		return record.Code{}, errors.Wrap(err, "can't get record from storage")
 	}
 
-	virtRec := rec.Record
-	codeRec, ok := virtRec.(*object.CodeRecord)
+	virtRec := rec.Virtual
+	concrete := record.Unwrap(virtRec)
+	codeRec, ok := concrete.(*record.Code)
 	if !ok {
-		return nil, errors.New("failed to retrieve code record")
+		return record.Code{}, errors.New("failed to retrieve code record")
 	}
 
-	return codeRec, nil
+	return *codeRec, nil
 }
 
 func (h *Handler) handleHeavyPayload(ctx context.Context, genericMsg insolar.Parcel) (insolar.Reply, error) {
 	msg := genericMsg.Message().(*message.HeavyPayload)
 
 	storeRecords(ctx, h.RecordModifier, h.RecordSequence, h.PCS, msg.PulseNum, msg.Records)
-	if err := storeIndexes(ctx, h.IndexModifier, msg.Indexes); err != nil {
+	if err := storeIndexBuckets(ctx, h.IndexBucketModifier, msg.IndexBuckets, msg.PulseNum); err != nil {
 		return &reply.HeavyError{Message: err.Error(), JetID: msg.JetID, PulseNum: msg.PulseNum}, nil
 	}
 	if err := storeDrop(ctx, h.DropModifier, msg.Drop); err != nil {

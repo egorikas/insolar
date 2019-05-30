@@ -22,39 +22,53 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/insolar/insolar/insolar"
-	"github.com/insolar/insolar/insolar/message"
 	"github.com/insolar/insolar/insolar/record"
 	"github.com/insolar/insolar/ledger/blob"
 	"github.com/insolar/insolar/ledger/object"
 )
 
-type Contract struct {
-	Name        string // ???
-	Domain      insolar.Reference
-	MachineType insolar.MachineType
-	Binary      []byte
-}
-
 //go:generate minimock -i github.com/insolar/insolar/internal/ledger/artifact.Manager -o ./ -s _gen_mock.go
 
-// Manager implements subset of methods from artifacts client required for genesis.
-// works
-// TODO: move common interface to insolar package
+// Manager implements methods required for direct ledger access.
 type Manager interface {
-	RegisterRequest(ctx context.Context, objectRef insolar.Reference, parcel insolar.Parcel) (*insolar.ID, error)
+	// GetObject returns descriptor for provided state.
+	//
+	// If provided state is nil, the latest state will be returned (w/o deactivation check).
+	GetObject(ctx context.Context, head insolar.Reference) (ObjectDescriptor, error)
+
+	// RegisterRequest creates request record in storage.
+	RegisterRequest(ctx context.Context, req record.Request) (*insolar.ID, error)
+
+	// RegisterResult saves payload result in storage (emulates of save call result by VM).
 	RegisterResult(ctx context.Context, obj, request insolar.Reference, payload []byte) (*insolar.ID, error)
+
+	// ActivateObject creates activate object record in storage.
+	// If memory is not provided, the prototype default memory will be used.
+	//
+	// Request reference will be this object's identifier and referred as "object head".
 	ActivateObject(
 		ctx context.Context,
 		domain, obj, parent, prototype insolar.Reference,
 		asDelegate bool,
 		memory []byte,
 	) (ObjectDescriptor, error)
+
+	// ActivatePrototype creates activate object record in storage.
+	// Provided prototype reference will be used as objects prototype memory as memory of created object.
 	ActivatePrototype(
 		ctx context.Context,
 		domain, obj, parent, code insolar.Reference,
 		memory []byte,
 	) (ObjectDescriptor, error)
+
+	// UpdateObject creates amend object record in storage.
+	// Provided reference should be a reference to the head of the object.
+	// Provided memory well be the new object memory.
+	//
+	// Returned descriptor is the latest object state (exact) reference.
 	UpdateObject(ctx context.Context, domain, request insolar.Reference, obj ObjectDescriptor, memory []byte) (ObjectDescriptor, error)
+
+	// DeployCode creates new code record in storage (code records are used to activate prototypes).
 	DeployCode(
 		ctx context.Context,
 		domain insolar.Reference,
@@ -64,37 +78,86 @@ type Manager interface {
 	) (*insolar.ID, error)
 }
 
+// Scope implements Manager interface.
 type Scope struct {
 	PulseNumber insolar.PulseNumber
 
-	PlatformCryptographyScheme insolar.PlatformCryptographyScheme
-	BlobModifier               blob.Modifier
-	RecordsModifier            object.RecordModifier
+	PCS insolar.PlatformCryptographyScheme
 
-	IndexModifier object.IndexModifier
-	IndexAccessor object.IndexAccessor
+	BlobStorage blob.Storage
+
+	RecordModifier object.RecordModifier
+	RecordAccessor object.RecordAccessor
+
+	LifelineModifier object.LifelineModifier
+	LifelineAccessor object.LifelineAccessor
 }
 
-func (m *Scope) RegisterRequest(ctx context.Context, objectRef insolar.Reference, parcel insolar.Parcel) (*insolar.ID, error) {
-	rec := &object.RequestRecord{
-		Parcel:      message.ParcelToBytes(parcel),
-		MessageHash: m.hashParcel(parcel),
-		Object:      *objectRef.Record(),
+// GetObject returns descriptor for provided state.
+//
+// If provided state is nil, the latest state will be returned (w/o deactivation check).
+func (m *Scope) GetObject(
+	ctx context.Context,
+	head insolar.Reference,
+) (ObjectDescriptor, error) {
+	idx, err := m.LifelineAccessor.ForID(ctx, m.PulseNumber, *head.Record())
+	if err != nil {
+		return nil, err
 	}
-	return m.setRecord(ctx, rec)
+
+	rec, err := m.RecordAccessor.ForID(ctx, *idx.LatestState)
+	if err != nil {
+		return nil, err
+	}
+
+	concrete := record.Unwrap(rec.Virtual)
+	state, ok := concrete.(record.State)
+	if !ok {
+		return nil, errors.New("invalid object record")
+	}
+
+	desc := &objectDescriptor{
+		head:         head,
+		state:        *idx.LatestState,
+		prototype:    state.GetImage(),
+		isPrototype:  state.GetIsPrototype(),
+		childPointer: idx.ChildPointer,
+		parent:       idx.Parent,
+	}
+	if state.GetMemory() != nil {
+		b, err := m.BlobStorage.ForID(ctx, *state.GetMemory())
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to fetch blob")
+		}
+		desc.memory = b.Value
+	}
+	return desc, nil
 }
 
+// RegisterRequest creates request record in storage.
+func (m *Scope) RegisterRequest(ctx context.Context, req record.Request) (*insolar.ID, error) {
+	virtRec := record.Wrap(req)
+	return m.setRecord(ctx, virtRec)
+}
+
+// RegisterResult saves payload result in storage (emulates of save call result by VM).
 func (m *Scope) RegisterResult(
 	ctx context.Context, obj, request insolar.Reference, payload []byte,
 ) (*insolar.ID, error) {
-	rec := &object.ResultRecord{
+	res := record.Result{
 		Object:  *obj.Record(),
 		Request: request,
 		Payload: payload,
 	}
-	return m.setRecord(ctx, rec)
+	virtRec := record.Wrap(res)
+
+	return m.setRecord(ctx, virtRec)
 }
 
+// ActivateObject creates activate object record in storage.
+// If memory is not provided, the prototype default memory will be used.
+//
+// Request reference will be this object's identifier and referred as "object head".
 func (m *Scope) ActivateObject(
 	ctx context.Context,
 	domain, obj, parent, prototype insolar.Reference,
@@ -104,6 +167,8 @@ func (m *Scope) ActivateObject(
 	return m.activateObject(ctx, domain, obj, prototype, false, parent, asDelegate, memory)
 }
 
+// ActivatePrototype creates activate object record in storage.
+// Provided prototype reference will be used as objects prototype memory as memory of created object.
 func (m *Scope) ActivatePrototype(
 	ctx context.Context,
 	domain, obj, parent, code insolar.Reference,
@@ -122,22 +187,18 @@ func (m *Scope) activateObject(
 	asDelegate bool,
 	memory []byte,
 ) (ObjectDescriptor, error) {
-	parentIdx, err := m.IndexAccessor.ForID(ctx, *parent.Record())
+	parentIdx, err := m.LifelineAccessor.ForID(ctx, m.PulseNumber, *parent.Record())
 	if err != nil {
-		return nil, errors.Wrap(err, "not found parent index for activated object")
+		return nil, errors.Wrapf(err, "not found parent index for activated object: %v", parent.String())
 	}
 
-	stateRecord := &object.ActivateRecord{
-		SideEffectRecord: object.SideEffectRecord{
-			Domain:  domain,
-			Request: obj,
-		},
-		StateRecord: object.StateRecord{
-			Image:       prototype,
-			IsPrototype: isPrototype,
-		},
-		Parent:     parent,
-		IsDelegate: asDelegate,
+	stateRecord := record.Activate{
+		Domain:      domain,
+		Request:     obj,
+		Image:       prototype,
+		IsPrototype: isPrototype,
+		Parent:      parent,
+		IsDelegate:  asDelegate,
 	}
 	stateObj, err := m.updateStateObject(ctx, obj, stateRecord, memory)
 	if err != nil {
@@ -162,6 +223,11 @@ func (m *Scope) activateObject(
 	return stateObj, nil
 }
 
+// UpdateObject creates amend object record in storage.
+// Provided reference should be a reference to the head of the object.
+// Provided memory well be the new object memory.
+//
+// Returned descriptor is the latest object state (exact) reference.
 func (m *Scope) UpdateObject(
 	ctx context.Context,
 	domain, request insolar.Reference,
@@ -185,20 +251,18 @@ func (m *Scope) UpdateObject(
 		return nil, errors.Wrap(err, "failed to update object")
 	}
 
-	amendRecord := &object.AmendRecord{
-		SideEffectRecord: object.SideEffectRecord{
-			Domain:  domain,
-			Request: request,
-		},
-		StateRecord: object.StateRecord{
-			Image:       *image,
-			IsPrototype: objDesc.IsPrototype(),
-		},
-		PrevState: *objDesc.StateID(),
+	amendRecord := record.Amend{
+		Domain:      domain,
+		Request:     request,
+		Image:       *image,
+		IsPrototype: objDesc.IsPrototype(),
+		PrevState:   *objDesc.StateID(),
 	}
+
 	return m.updateStateObject(ctx, *objDesc.HeadRef(), amendRecord, memory)
 }
 
+// DeployCode creates new code record in storage (code records are used to activate prototypes).
 func (m *Scope) DeployCode(
 	ctx context.Context,
 	domain insolar.Reference,
@@ -211,32 +275,33 @@ func (m *Scope) DeployCode(
 		return nil, err
 	}
 
-	codeRec := &object.CodeRecord{
-		SideEffectRecord: object.SideEffectRecord{
-			Domain:  domain,
-			Request: request,
-		},
-		Code:        blobID,
+	codeRec := record.Code{
+		Domain:      domain,
+		Request:     request,
+		Code:        *blobID,
 		MachineType: machineType,
 	}
+
 	return m.setRecord(
 		ctx,
-		codeRec,
+		record.Wrap(codeRec),
 	)
 }
 
-func (m *Scope) setRecord(ctx context.Context, rec record.VirtualRecord) (*insolar.ID, error) {
-	id := object.NewRecordIDFromRecord(m.PlatformCryptographyScheme, m.PulseNumber, rec)
-	matRec := record.MaterialRecord{
-		Record: rec,
-		JetID:  insolar.ZeroJetID,
+func (m *Scope) setRecord(ctx context.Context, rec record.Virtual) (*insolar.ID, error) {
+	hash := record.HashVirtual(m.PCS.ReferenceHasher(), rec)
+	id := insolar.NewID(m.PulseNumber, hash)
+
+	matRec := record.Material{
+		Virtual: &rec,
+		JetID:   insolar.ZeroJetID,
 	}
-	return id, m.RecordsModifier.Set(ctx, *id, matRec)
+	return id, m.RecordModifier.Set(ctx, *id, matRec)
 }
 
 func (m *Scope) setBlob(ctx context.Context, memory []byte) (*insolar.ID, error) {
-	blobID := object.CalculateIDForBlob(m.PlatformCryptographyScheme, m.PulseNumber, memory)
-	err := m.BlobModifier.Set(
+	blobID := object.CalculateIDForBlob(m.PCS, m.PulseNumber, memory)
+	err := m.BlobStorage.Set(
 		ctx,
 		*blobID,
 		blob.Blob{
@@ -258,17 +323,18 @@ func (m *Scope) registerChild(
 	asType *insolar.Reference,
 ) error {
 	var jetID = insolar.ID(insolar.ZeroJetID)
-	idx, err := m.IndexAccessor.ForID(ctx, *parent.Record())
+	idx, err := m.LifelineAccessor.ForID(ctx, m.PulseNumber, *parent.Record())
 	if err != nil {
 		return err
 	}
 
-	childRec := &object.ChildRecord{
-		PrevChild: prevChild,
-		Ref:       obj,
+	childRec := record.Child{Ref: obj}
+	if prevChild != nil && prevChild.NotEmpty() {
+		childRec.PrevChild = *prevChild
 	}
 
-	recID := object.NewRecordIDFromRecord(m.PlatformCryptographyScheme, m.PulseNumber, childRec)
+	hash := record.HashVirtual(m.PCS.ReferenceHasher(), record.Wrap(childRec))
+	recID := insolar.NewID(m.PulseNumber, hash)
 
 	// Children exist and pointer does not match (preserving chain consistency).
 	// For the case when vm can't save or send result to another vm and it tries to update the same record again
@@ -276,24 +342,24 @@ func (m *Scope) registerChild(
 		return errors.New("invalid child record")
 	}
 
-	child, err := m.setRecord(ctx, childRec)
+	child, err := m.setRecord(ctx, record.Wrap(childRec))
 	if err != nil {
 		return err
 	}
 
 	idx.ChildPointer = child
 	if asType != nil {
-		idx.Delegates[*asType] = obj
+		idx.SetDelegate(*asType, obj)
 	}
 	idx.LatestUpdate = m.PulseNumber
 	idx.JetID = insolar.JetID(jetID)
-	return m.IndexModifier.Set(ctx, *parent.Record(), idx)
+	return m.LifelineModifier.Set(ctx, m.PulseNumber, *parent.Record(), idx)
 }
 
 func (m *Scope) updateStateObject(
 	ctx context.Context,
 	objRef insolar.Reference,
-	stateObject object.State,
+	stateObject record.State,
 	memory []byte,
 ) (ObjectDescriptor, error) {
 	var jetID = insolar.ID(insolar.ZeroJetID)
@@ -302,47 +368,45 @@ func (m *Scope) updateStateObject(
 		return nil, errors.Wrap(err, "failed to update blob")
 	}
 
-	var virtRecord record.VirtualRecord
+	var virtRecord record.Virtual
 	switch so := stateObject.(type) {
-	case *object.ActivateRecord:
-		so.Memory = blobID
-		virtRecord = so
-	case *object.AmendRecord:
-		virtRecord = so
-		so.Memory = blobID
+	case record.Activate:
+		so.Memory = *blobID
+		virtRecord = record.Wrap(so)
+	case record.Amend:
+		so.Memory = *blobID
+		virtRecord = record.Wrap(so)
 	default:
 		panic("unknown state object type")
 	}
 
-	idx, err := m.IndexAccessor.ForID(ctx, *objRef.Record())
+	idx, err := m.LifelineAccessor.ForID(ctx, m.PulseNumber, *objRef.Record())
 	// No index on our node.
 	if err != nil {
-		if err != object.ErrIndexNotFound {
+		if err != object.ErrLifelineNotFound {
 			return nil, errors.Wrap(err, "failed get index for updating state object")
 		}
-		if stateObject.ID() != object.StateActivation {
+		if stateObject.ID() != record.StateActivation {
 			return nil, errors.Wrap(err, "index not found for updating non Activation state object")
 		}
 		// We are activating the object. There is no index for it yet.
-		idx = object.Lifeline{State: object.StateUndefined}
+		idx = object.Lifeline{StateID: record.StateUndefined}
 	}
-	// TODO: validateState
 
-	// TODO: validate index consistency
 	id, err := m.setRecord(ctx, virtRecord)
 	if err != nil {
 		return nil, errors.Wrap(err, "fail set record for state object")
 	}
 
 	// update index
-	idx.State = stateObject.ID()
+	idx.StateID = stateObject.ID()
 	idx.LatestState = id
 	idx.LatestUpdate = m.PulseNumber
-	if stateObject.ID() == object.StateActivation {
-		idx.Parent = stateObject.(*object.ActivateRecord).Parent
+	if stateObject.ID() == record.StateActivation {
+		idx.Parent = stateObject.(record.Activate).Parent
 	}
 	idx.JetID = insolar.JetID(jetID)
-	err = m.IndexModifier.Set(ctx, *objRef.Record(), idx)
+	err = m.LifelineModifier.Set(ctx, m.PulseNumber, *objRef.Record(), idx)
 	if err != nil {
 		return nil, errors.Wrap(err, "fail set index for state object")
 	}
@@ -355,8 +419,4 @@ func (m *Scope) updateStateObject(
 		childPointer: idx.ChildPointer,
 		parent:       idx.Parent,
 	}, nil
-}
-
-func (m *Scope) hashParcel(parcel insolar.Parcel) []byte {
-	return m.PlatformCryptographyScheme.IntegrityHasher().Hash(message.MustSerializeBytes(parcel.Message()))
 }

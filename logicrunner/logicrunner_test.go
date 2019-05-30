@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+// +build slowtest
+
 package logicrunner
 
 import (
@@ -30,11 +32,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/insolar/insolar/ledger/light/artifactmanager"
-	"github.com/insolar/insolar/pulsar"
-	"github.com/insolar/insolar/pulsar/entropygenerator"
 	"github.com/stretchr/testify/suite"
 	"github.com/ugorji/go/codec"
+
+	"github.com/insolar/insolar/insolar/record"
+	"github.com/insolar/insolar/ledger/light/artifactmanager"
+	"github.com/insolar/insolar/ledger/object"
+	"github.com/insolar/insolar/pulsar"
+	"github.com/insolar/insolar/pulsar/entropygenerator"
 
 	"github.com/insolar/insolar/application/contract/member"
 	"github.com/insolar/insolar/application/contract/member/signer"
@@ -99,21 +104,12 @@ func (s *LogicRunnerFuncSuite) SetupSuite() {
 	}
 }
 
-func MessageBusTrivialBehavior(mb *testmessagebus.TestMessageBus, lr *LogicRunner) {
-	mb.ReRegister(insolar.TypeCallMethod, lr.FlowDispatcher.WrapBusHandle)
-	mb.ReRegister(insolar.TypeCallConstructor, lr.FlowDispatcher.WrapBusHandle)
-
-	mb.ReRegister(insolar.TypeValidateCaseBind, lr.HandleValidateCaseBindMessage)
-	mb.ReRegister(insolar.TypeValidationResults, lr.HandleValidationResultsMessage)
-	mb.ReRegister(insolar.TypeExecutorResults, lr.HandleExecutorResultsMessage)
-}
-
 func (s *LogicRunnerFuncSuite) PrepareLrAmCbPm() (insolar.LogicRunner, artifacts.Client, *goplugintestutils.ContractsBuilder, insolar.PulseManager, *artifactmanager.MessageHandler, func()) {
 	ctx := context.TODO()
 	lrSock := os.TempDir() + "/" + testutils.RandomString() + ".sock"
 	rundSock := os.TempDir() + "/" + testutils.RandomString() + ".sock"
 
-	rundCleaner, err := goplugintestutils.StartInsgorund(s.runnerBin, "unix", rundSock, "unix", lrSock)
+	rundCleaner, err := goplugintestutils.StartInsgorund(s.runnerBin, "unix", rundSock, "unix", lrSock, true)
 	s.NoError(err)
 
 	lr, err := NewLogicRunner(&configuration.LogicRunner{
@@ -126,23 +122,23 @@ func (s *LogicRunnerFuncSuite) PrepareLrAmCbPm() (insolar.LogicRunner, artifacts
 	})
 	s.NoError(err, "Initialize runner")
 
-	mock := testutils.NewCryptographyServiceMock(s.T())
-	mock.SignFunc = func(p []byte) (r *insolar.Signature, r1 error) {
+	cryptoMock := testutils.NewCryptographyServiceMock(s.T())
+	cryptoMock.SignFunc = func(p []byte) (r *insolar.Signature, r1 error) {
 		signature := insolar.SignatureFromBytes(nil)
 		return &signature, nil
 	}
-	mock.GetPublicKeyFunc = func() (crypto.PublicKey, error) {
+	cryptoMock.GetPublicKeyFunc = func() (crypto.PublicKey, error) {
 		return nil, nil
 	}
 
 	delegationTokenFactory := delegationtoken.NewDelegationTokenFactory()
-	nk := nodekeeper.GetTestNodekeeper(mock)
+	nk := nodekeeper.GetTestNodekeeper(cryptoMock)
 
 	mb := testmessagebus.NewTestMessageBus(s.T())
 
 	nw := testutils.GetTestNetwork(s.T())
 	// FIXME: TmpLedger is deprecated. Use mocks instead.
-	l, messageHandler := artifacts.TmpLedger(
+	l, messageHandler, indexStor := artifacts.TmpLedger(
 		s.T(),
 		"",
 		insolar.Components{
@@ -161,10 +157,14 @@ func (s *LogicRunnerFuncSuite) PrepareLrAmCbPm() (insolar.LogicRunner, artifacts
 	am := l.GetArtifactManager()
 	cm.Register(am, l.GetPulseManager(), l.GetJetCoordinator())
 	cr, err := contractrequester.New()
+	// Here we increase the default timeout to 10 minutes to prevent accidental test fails on CI.
+	// In normal code the user of ContractRequester never has to do anything like this. For this
+	// reason ContractRequester _interface_ doesn't has a SetCallTimeout method.
+	cr.SetCallTimeout(10 * time.Minute)
 	pulseAccessor := l.PulseManager.(*pulsemanager.PulseManager).PulseAccessor
 	nth := testutils.NewTerminationHandlerMock(s.T())
 
-	cm.Inject(pulseAccessor, nk, providerMock, l, lr, nw, mb, cr, delegationTokenFactory, parcelFactory, nth, mock)
+	cm.Inject(pulseAccessor, nk, providerMock, l, lr, nw, mb, cr, delegationTokenFactory, parcelFactory, nth, cryptoMock)
 	err = cm.Init(ctx)
 	s.NoError(err)
 	err = cm.Start(ctx)
@@ -173,7 +173,7 @@ func (s *LogicRunnerFuncSuite) PrepareLrAmCbPm() (insolar.LogicRunner, artifacts
 	MessageBusTrivialBehavior(mb, lr)
 	pm := l.GetPulseManager()
 
-	s.incrementPulseHelper(ctx, lr, pm)
+	s.incrementPulseHelper(ctx, lr, pm, messageHandler, indexStor)
 
 	cb := goplugintestutils.NewContractBuilder(am, s.icc)
 
@@ -184,17 +184,35 @@ func (s *LogicRunnerFuncSuite) PrepareLrAmCbPm() (insolar.LogicRunner, artifacts
 	}
 }
 
-func (s *LogicRunnerFuncSuite) incrementPulseHelper(ctx context.Context, lr insolar.LogicRunner, pm insolar.PulseManager) {
+func (s *LogicRunnerFuncSuite) incrementPulseHelper(
+	ctx context.Context,
+	lr insolar.LogicRunner,
+	pm insolar.PulseManager,
+	messageHandler *artifactmanager.MessageHandler,
+	index *object.InMemoryIndex,
+) {
 	pulseStorage := pm.(*pulsemanager.PulseManager).PulseAccessor
+
 	currentPulse, _ := pulseStorage.Latest(ctx)
 
 	newPulseNumber := currentPulse.PulseNumber + 1
-	err := pm.Set(
-		ctx,
-		insolar.Pulse{PulseNumber: newPulseNumber, Entropy: insolar.Entropy{}},
-		true,
-	)
+	newPulse := insolar.Pulse{PulseNumber: newPulseNumber, Entropy: insolar.Entropy{}}
+	err := pm.Set(ctx, newPulse, true)
 	s.Require().NoError(err)
+
+	messageHandler.FlowDispatcher.ChangePulse(ctx, newPulse)
+
+	var hotIndexes []message.HotIndex
+
+	bucks := index.ForPNAndJet(ctx, insolar.FirstPulseNumber, *insolar.NewJetID(0, nil))
+	for _, meta := range bucks {
+		encoded, _ := meta.Lifeline.Marshal()
+		hotIndexes = append(hotIndexes, message.HotIndex{
+			LastUsed: meta.LifelineLastUsed,
+			ObjID:    meta.ObjID,
+			Index:    encoded,
+		})
+	}
 
 	rootJetId := *insolar.NewJetID(0, nil)
 	_, err = lr.(*LogicRunner).MessageBus.Send(
@@ -203,22 +221,11 @@ func (s *LogicRunnerFuncSuite) incrementPulseHelper(ctx context.Context, lr inso
 			Jet:             *insolar.NewReference(insolar.DomainID, insolar.ID(rootJetId)),
 			Drop:            drop.Drop{Pulse: 1, JetID: rootJetId},
 			PendingRequests: nil,
+			HotIndexes:      hotIndexes,
 			PulseNumber:     newPulseNumber,
 		}, nil,
 	)
 	s.Require().NoError(err)
-}
-
-func mockCryptographyService(t *testing.T) insolar.CryptographyService {
-	mock := testutils.NewCryptographyServiceMock(t)
-	mock.SignFunc = func(p []byte) (r *insolar.Signature, r1 error) {
-		signature := insolar.SignatureFromBytes(nil)
-		return &signature, nil
-	}
-	mock.VerifyFunc = func(p crypto.PublicKey, p1 insolar.Signature, p2 []byte) (r bool) {
-		return true
-	}
-	return mock
 }
 
 func ValidateAllResults(t testing.TB, ctx context.Context, lr insolar.LogicRunner, mustfail ...insolar.Reference) {
@@ -242,13 +249,18 @@ func executeMethod(
 
 	rlr := lr.(*LogicRunner)
 
-	bm := message.BaseLogicMessage{
-		Caller: testutils.RandomRef(),
-		Nonce:  nonce,
+	msg := &message.CallMethod{
+		Request: record.Request{
+			Caller:    testutils.RandomRef(),
+			Nonce:     nonce,
+			Object:    &objRef,
+			Prototype: &proxyPrototype,
+			Method:    method,
+			Arguments: argsSerialized,
+		},
 	}
 
-	rep, err := rlr.ContractRequester.CallMethod(ctx, &bm, false, false, &objRef, method, argsSerialized, &proxyPrototype)
-	return rep, err
+	return rlr.ContractRequester.CallMethod(ctx, msg)
 }
 
 func firstMethodRes(t *testing.T, resp insolar.Reply) interface{} {
@@ -332,6 +344,7 @@ func (c *One) Dec() (int, error) {
 func changePulse(ctx context.Context, lr insolar.LogicRunner, msgHandler *artifactmanager.MessageHandler) {
 	pulse := pulsar.NewPulse(1, insolar.FirstPulseNumber, &entropygenerator.StandardEntropyGenerator{})
 	lr.(*LogicRunner).FlowDispatcher.ChangePulse(ctx, *pulse)
+	lr.(*LogicRunner).innerFlowDispatcher.ChangePulse(ctx, *pulse)
 	msgHandler.OnPulse(ctx, *pulse)
 }
 
@@ -1124,11 +1137,9 @@ func (s *LogicRunnerFuncSuite) TestRootDomainContractError() {
 	// Initializing Root Domain
 	rootDomainID, err := am.RegisterRequest(
 		ctx,
-		insolar.GenesisRecord.Ref(),
-		&message.Parcel{
-			Msg: &message.GenesisRequest{
-				Name: "4K3NiGuqYGqKPnYp6XeGd2kdN4P9veL6rYcWkLKWXZCu.7ZQboaH24PH42sqZKUvoa7UBrpuuubRtShp6CKNuWGZa",
-			},
+		record.Request{
+			CallType: record.CTGenesis,
+			Method:   "RootDomain",
 		},
 	)
 	s.NoError(err)
@@ -1155,11 +1166,9 @@ func (s *LogicRunnerFuncSuite) TestRootDomainContractError() {
 
 	rootMemberID, err := am.RegisterRequest(
 		ctx,
-		insolar.GenesisRecord.Ref(),
-		&message.Parcel{
-			Msg: &message.GenesisRequest{
-				Name: "4FFB8zfQoGznSmzDxwv4njX1aR9ioL8GHSH17QXH2AFa.7ZQboaH24PH42sqZKUvoa7UBrpuuubRtShp6CKNuWGZa",
-			},
+		record.Request{
+			CallType: record.CTGenesis,
+			Method:   "RootMember",
 		},
 	)
 	s.NoError(err)
@@ -1507,7 +1516,13 @@ func (r *One) CreateAllowance(member string) (error) {
 	kp := platformpolicy.NewKeyProcessor()
 
 	// Initializing Root Domain
-	rootDomainID, err := am.RegisterRequest(ctx, insolar.GenesisRecord.Ref(), &message.Parcel{Msg: &message.GenesisRequest{Name: "4K3NiGuqYGqKPnYp6XeGd2kdN4P9veL6rYcWkLKWXZCu.7ZQboaH24PH42sqZKUvoa7UBrpuuubRtShp6CKNuWGZa"}})
+	rootDomainID, err := am.RegisterRequest(
+		ctx,
+		record.Request{
+			CallType: record.CTGenesis,
+			Method:   "RootDomain",
+		},
+	)
 	s.NoError(err)
 	rootDomainRef := getRefFromID(rootDomainID)
 	rootDomainDesc, err := am.ActivateObject(
@@ -1530,11 +1545,9 @@ func (r *One) CreateAllowance(member string) (error) {
 
 	rootMemberID, err := am.RegisterRequest(
 		ctx,
-		insolar.GenesisRecord.Ref(),
-		&message.Parcel{
-			Msg: &message.GenesisRequest{
-				Name: "4K3NiGuqYGqKPnYp6XeGd2kdN4P9veL6rYcWkLKWXZCu.4FFB8zfQoGznSmzDxwv4njX1aR9ioL8GHSH17QXH2AFa",
-			},
+		record.Request{
+			CallType: record.CTGenesis,
+			Method:   "RootMember",
 		},
 	)
 	s.NoError(err)
@@ -1574,7 +1587,10 @@ func (r *One) CreateAllowance(member string) (error) {
 	// Call CreateAllowance method in custom contract
 	domain, err := insolar.NewReferenceFromBase58("7ZQboaH24PH42sqZKUvoa7UBrpuuubRtShp6CKNuWGZa.7ZQboaH24PH42sqZKUvoa7UBrpuuubRtShp6CKNuWGZa")
 	s.Require().NoError(err)
-	contractID, err := am.RegisterRequest(ctx, insolar.GenesisRecord.Ref(), &message.Parcel{Msg: &message.CallConstructor{}})
+	contractID, err := am.RegisterRequest(
+		ctx,
+		record.Request{CallType: record.CTSaveAsChild},
+	)
 	s.NoError(err)
 	contract := getRefFromID(contractID)
 	_, err = am.ActivateObject(
@@ -1792,7 +1808,7 @@ func (r *One) EmptyMethod() (error) {
 
 	_, prototype := s.getObjectInstance(ctx, am, cb, "one")
 
-	proto, err := am.GetObject(ctx, *prototype, nil, false)
+	proto, err := am.GetObject(ctx, *prototype)
 	codeRef, err := proto.Code()
 
 	s.NoError(err, "get contract code")
@@ -2048,10 +2064,12 @@ func (c *First) GetName() (string, error) {
 func (s *LogicRunnerFuncSuite) getObjectInstance(ctx context.Context, am artifacts.Client, cb *goplugintestutils.ContractsBuilder, contractName string) (*insolar.Reference, *insolar.Reference) {
 	domain, err := insolar.NewReferenceFromBase58("4K3NiGuqYGqKPnYp6XeGd2kdN4P9veL6rYcWkLKWXZCu.7ZQboaH24PH42sqZKUvoa7UBrpuuubRtShp6CKNuWGZa")
 	s.Require().NoError(err)
+
+	proto := testutils.RandomRef()
+
 	contractID, err := am.RegisterRequest(
 		ctx,
-		insolar.GenesisRecord.Ref(),
-		&message.Parcel{Msg: &message.CallConstructor{PrototypeRef: testutils.RandomRef()}},
+		record.Request{CallType: record.CTSaveAsChild, Prototype: &proto},
 	)
 	s.NoError(err)
 	objectRef := getRefFromID(contractID)

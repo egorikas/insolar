@@ -21,6 +21,7 @@ import (
 
 	fuzz "github.com/google/gofuzz"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/insolar/gen"
@@ -34,225 +35,258 @@ func FuzzRandomReference(t *insolar.Reference, _ fuzz.Continue) {
 	*t = gen.Reference()
 }
 
+func fuzzer() *fuzz.Fuzzer {
+	return fuzz.New().Funcs(FuzzRandomID, FuzzRandomReference).NumElements(50, 100).NilChance(0)
+}
+
 func TestMarshalUnmarshalRecord(t *testing.T) {
-	f := fuzz.New().Funcs(FuzzRandomID, FuzzRandomReference).NumElements(50, 100).NilChance(0)
 
 	t.Run("GenesisRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record GenesisRecord
+		var record Genesis
 
 		for i := 0; i < 1; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
 			for i := 0; i < 2; i++ {
-				binNew, err := MarshalRecord(&record)
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Genesis
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
 	t.Run("ChildRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record ChildRecord
+		var record Child
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Child
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
 	t.Run("JetRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record JetRecord
+		var record Jet
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Jet
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
 	t.Run("RequestRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record RequestRecord
+		var record Request
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Request
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
 	t.Run("ResultRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record ResultRecord
+		var record Result
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Result
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
 	t.Run("TypeRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record TypeRecord
+		var record Type
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Type
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
 	t.Run("CodeRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record CodeRecord
+		var record Code
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Code
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
-	t.Run("ObjectActivateRecordTest", func(t *testing.T) {
+	t.Run("ActivateRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record ObjectActivateRecord
+		var record Activate
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Activate
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
-	t.Run("ObjectAmendRecordTest", func(t *testing.T) {
+	t.Run("AmendRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record ObjectAmendRecord
+		var record Amend
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Amend
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})
 
-	t.Run("ObjectDeactivateRecordTest", func(t *testing.T) {
+	t.Run("DeactivateRecordTest", func(t *testing.T) {
+		f := fuzzer()
 		a := assert.New(t)
 		t.Parallel()
-		var record ObjectDeactivateRecord
+		var record Deactivate
 
 		for i := 0; i < 10; i++ {
 			f.Fuzz(&record)
 
-			bin, err := MarshalRecord(&record)
+			bin, err := record.Marshal()
 			a.NoError(err)
-			for i := 0; i < 100; i++ {
-				binNew, err := MarshalRecord(&record)
+			for i := 0; i < 2; i++ {
+				binNew, err := record.Marshal()
 				a.NoError(err)
 				a.Equal(bin, binNew)
 
-				recordNew, err := UnmarshalRecord(binNew)
+				var recordNew Deactivate
+				err = recordNew.Unmarshal(binNew)
+				require.NoError(t, err)
 
-				a.Equal(&record, recordNew)
+				a.Equal(&record, &recordNew)
 			}
 		}
 	})

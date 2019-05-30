@@ -53,14 +53,16 @@ var (
 	prometheusConfigTmpl = "scripts/prom/server.yml.tmpl"
 	prometheusFileName   = "prometheus.yaml"
 
-	genesisConfigTmpl = "scripts/insolard/genesis_template.yaml"
+	genesisConfigTmpl = "scripts/insolard/bootstrap/genesis_template.yaml"
 	genesisFileName   = withBaseDir("genesis.yaml")
 
-	insolardConfigTmpl = "scripts/insolard/insolard_template.yaml"
-	insolardFileName   = withBaseDir("insolard.yaml")
+	bootstrapInsolardConfigTmpl = "scripts/insolard/bootstrap/insolard_template.yaml"
+	bootstrapInsolardFileName   = withBaseDir("insolard.yaml")
 
 	pulsardConfigTmpl = "scripts/insolard/pulsar_template.yaml"
 	pulsardFileName   = withBaseDir("pulsar.yaml")
+
+	insolardDefaultsConfig = "scripts/insolard/defaults/insolard.yaml"
 )
 
 var (
@@ -114,7 +116,7 @@ func main() {
 	parseInputParams()
 
 	mustMakeDir(outputDir)
-	writeInsloardConfig()
+	writeBootstrapInsolardConfig()
 	writeGenesisConfig()
 
 	genesisConf, err := genesis.ParseGenesisConfig(genesisFileName)
@@ -132,7 +134,8 @@ func main() {
 	// process discovery nodes
 	for index, node := range genesisConf.DiscoveryNodes {
 		nodeIndex := index + 1
-		conf := configuration.NewConfiguration()
+
+		conf := newDefaultInsolardConfig()
 
 		conf.Host.Transport.Address = node.Host
 		conf.Host.Transport.Protocol = "TCP"
@@ -152,6 +155,7 @@ func main() {
 		conf.Log.Level = debugLevel
 		conf.Log.Adapter = "zerolog"
 		conf.Log.Formatter = "json"
+
 		conf.KeysPath = genesisConf.DiscoveryKeysDir + fmt.Sprintf(genesisConf.KeysNameFormat, nodeIndex)
 		conf.Ledger.Storage.DataDirectory = fmt.Sprintf(discoveryDataDirectoryTemplate, nodeIndex)
 		conf.CertificatePath = fmt.Sprintf(discoveryCertificatePathTemplate, nodeIndex)
@@ -171,7 +175,8 @@ func main() {
 	for index, node := range genesisConf.Nodes {
 		nodeIndex := index + 1
 
-		conf := configuration.NewConfiguration()
+		conf := newDefaultInsolardConfig()
+
 		conf.Host.Transport.Address = node.Host
 		conf.Host.Transport.Protocol = "TCP"
 
@@ -190,6 +195,7 @@ func main() {
 		conf.Log.Level = debugLevel
 		conf.Log.Adapter = "zerolog"
 		conf.Log.Formatter = "json"
+
 		conf.KeysPath = node.KeysFile
 		conf.Ledger.Storage.DataDirectory = fmt.Sprintf(nodeDataDirectoryTemplate, nodeIndex)
 		conf.CertificatePath = fmt.Sprintf(nodeCertificatePathTemplate, nodeIndex)
@@ -205,7 +211,6 @@ func main() {
 	writeInsolardConfigs(filepath.Join(outputDir, "/discoverynodes"), discoveryNodesConfigs)
 	writeInsolardConfigs(filepath.Join(outputDir, "/nodes"), nodesConfigs)
 	writeGorundPorts(gorundPorts)
-	writeGenesisConfig()
 
 	pulsarConf := &pulsarConfigVars{}
 	pulsarConf.DataDir = withBaseDir("pulsar_data")
@@ -213,6 +218,7 @@ func main() {
 	for _, node := range genesisConf.DiscoveryNodes {
 		pulsarConf.BootstrapHosts = append(pulsarConf.BootstrapHosts, node.Host)
 	}
+	pulsarConf.AgentEndpoint = defaultJaegerEndPoint
 	writePulsarConfig(pulsarConf)
 
 	pwConfig.Interval = 500 * time.Millisecond
@@ -239,24 +245,33 @@ func writeGenesisConfig() {
 	check("Can't makeFileWithDir: "+genesisFileName, err)
 }
 
-func writeInsloardConfig() {
-	templates, err := template.ParseFiles(insolardConfigTmpl)
-	check("Can't parse template: "+insolardConfigTmpl, err)
+func writeBootstrapInsolardConfig() {
+	templates, err := template.ParseFiles(bootstrapInsolardConfigTmpl)
+	check("Can't parse template: "+bootstrapInsolardConfigTmpl, err)
 
 	var b bytes.Buffer
 	err = templates.Execute(&b, &commonConfigVars{BaseDir: baseDir()})
-	check("Can't process template: "+insolardConfigTmpl, err)
+	check("Can't process template: "+bootstrapInsolardConfigTmpl, err)
 
-	// fmt.Println("insolardFileName:", insolardFileName)
-	// os.Exit(1)
-	err = createFileWithDir(insolardFileName, b.String())
-	check("Can't makeFileWithDir: "+insolardFileName, err)
+	err = createFileWithDir(bootstrapInsolardFileName, b.String())
+	check("Can't makeFileWithDir: "+bootstrapInsolardFileName, err)
+}
+
+var defaultInsloardConf *configuration.Configuration
+
+func newDefaultInsolardConfig() configuration.Configuration {
+	if defaultInsloardConf == nil {
+		holder := configuration.NewHolderWithFilePaths(insolardDefaultsConfig).MustInit(true)
+		defaultInsloardConf = &holder.Configuration
+	}
+	return *defaultInsloardConf
 }
 
 type pulsarConfigVars struct {
 	commonConfigVars
 	BootstrapHosts []string
 	DataDir        string
+	AgentEndpoint  string
 }
 
 func writePulsarConfig(pcv *pulsarConfigVars) {
@@ -266,7 +281,6 @@ func writePulsarConfig(pcv *pulsarConfigVars) {
 	var b bytes.Buffer
 	err = templates.Execute(&b, pcv)
 	check("Can't process template: "+pulsardConfigTmpl, err)
-
 	err = makeFile(pulsardFileName, b.String())
 	check("Can't makeFileWithDir: "+pulsardFileName, err)
 }

@@ -180,25 +180,10 @@ func (m *middleware) waitForHotData(handler insolar.MessageHandler) insolar.Mess
 		}
 
 		jetID := jetFromContext(ctx)
-		err := m.jetWaiter.Wait(ctx, jetID)
+		err := m.jetWaiter.Wait(ctx, jetID, parcel.Pulse())
 		if err != nil {
 			return &reply.Error{ErrType: reply.ErrHotDataTimeout}, nil
 		}
 		return handler(ctx, parcel)
-	}
-}
-
-func (m *middleware) releaseHotDataWaiters(handler insolar.MessageHandler) insolar.MessageHandler {
-	return func(ctx context.Context, parcel insolar.Parcel) (insolar.Reply, error) {
-		rep, err := handler(ctx, parcel)
-
-		hotDataMessage := parcel.Message().(*message.HotData)
-		jetID := hotDataMessage.Jet.Record()
-		unlockErr := m.jetReleaser.Unlock(ctx, *jetID)
-		if unlockErr != nil {
-			inslogger.FromContext(ctx).Error(err)
-		}
-
-		return rep, err
 	}
 }
