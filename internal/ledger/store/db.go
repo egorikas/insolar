@@ -80,10 +80,19 @@ const (
 	// ScopeGenesis is the scope for a genesis records.
 	ScopeGenesis Scope = 8
 
+	// ScopeJetTree is the scope for a jet tree storage.
+	ScopeJetTree Scope = 9
+
+	// ScopeJetKeeper is the scope for a jet id storage.
+	ScopeJetKeeper Scope = 10
+
+	// ScopePulseSequence is the scope for a pulse sequence.
+	ScopePulseSequence Scope = 11
+
 	// ScopeReplicaPosition is the scope for replication process position.
-	ScopeReplicaPosition = 9
+	ScopeReplicaPosition = 12
 	// ScopePulseLabel is the scope for ordered record pulse labels.
-	ScopePulseLabel = 10
+	ScopePulseLabel = 13
 	// ScopeSequenceRecord is the scope for ordered record storage.
-	ScopeSequenceRecord = 11
+	ScopeSequenceRecord = 14
 )
