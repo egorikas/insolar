@@ -150,7 +150,11 @@ func RetryJetSender(jetModifier jet.Modifier) PreSender {
 				}
 
 				if r, ok := rep.(*reply.JetMiss); ok {
-					jetModifier.Update(ctx, r.Pulse, true, insolar.JetID(r.JetID))
+					err := jetModifier.Update(ctx, r.Pulse, true, insolar.JetID(r.JetID))
+					if err != nil {
+						return nil, errors.Wrapf(err, "failed to update r.JetID=%v",
+							insolar.JetID(r.JetID).DebugString())
+					}
 				} else {
 					return rep, err
 				}
@@ -183,6 +187,7 @@ func RetryFlowCancelled(accessor pulse.Accessor) PreSender {
 
 func retryer(accessor pulse.Accessor, retriesCount int, errSubstr string, debugStr string, err string) PreSender {
 	return func(sender Sender) Sender {
+
 		return func(ctx context.Context, msg insolar.Message, options *insolar.MessageSendOptions) (insolar.Reply, error) {
 			retries := retriesCount
 			var lastPulse insolar.PulseNumber
@@ -194,7 +199,7 @@ func retryer(accessor pulse.Accessor, retriesCount int, errSubstr string, debugS
 				}
 
 				if currentPulse.PulseNumber == lastPulse {
-					inslogger.FromContext(ctx).Debug("[ RetryIncorrectPulse ]  wait for pulse change")
+					inslogger.FromContext(ctx).Debugf("[ RetryIncorrectPulse ]  wait for pulse change. Current: %d", currentPulse)
 					time.Sleep(100 * time.Millisecond)
 					continue
 				}

@@ -23,7 +23,6 @@ import (
 	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/infrastructure/gochannel"
 
-	"github.com/insolar/insolar/ledger/heavy/consistency"
 	"github.com/insolar/insolar/ledger/heavy/replica"
 	"github.com/insolar/insolar/log"
 
@@ -232,10 +231,8 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 		indexes := object.NewIndexDB(DB)
 		blobs := blob.NewDB(DB)
 		drops := drop.NewDB(DB)
-		recordSequence := object.NewSequenceRecordDB(DB)
 		jets := jet.NewDBStore(DB)
-		jetKeeper := replica.NewJetKeeper(DB)
-		pulseValidator := consistency.NewValidator(jets, jetKeeper, DB)
+		jetKeeper := replica.NewJetKeeper(jets, DB)
 
 		pm := pulsemanager.NewPulseManager()
 		pm.Bus = Bus
@@ -256,12 +253,10 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 		h.BlobAccessor = blobs
 		h.BlobModifier = blobs
 		h.DropModifier = drops
-		h.RecordSequence = recordSequence
 		h.PCS = CryptoScheme
 		h.PulseAccessor = Pulses
 		h.JetModifier = jets
 		h.JetKeeper = jetKeeper
-		h.PulseValidator = pulseValidator
 
 		PulseManager = pm
 		Handler = h

@@ -36,9 +36,15 @@ type Accessor interface {
 
 // Modifier provides an interface for modifying jet IDs.
 type Modifier interface {
-	Update(ctx context.Context, pulse insolar.PulseNumber, actual bool, ids ...insolar.JetID)
+	Update(ctx context.Context, pulse insolar.PulseNumber, actual bool, ids ...insolar.JetID) error
 	Split(ctx context.Context, pulse insolar.PulseNumber, id insolar.JetID) (insolar.JetID, insolar.JetID, error)
-	Clone(ctx context.Context, from, to insolar.PulseNumber)
+	Clone(ctx context.Context, from, to insolar.PulseNumber) error
+}
+
+//go:generate minimock -i github.com/insolar/insolar/insolar/jet.Cleaner -o ./ -s _mock.go
+
+// Cleaner provides an interface for removing jet.Tree from a storage.
+type Cleaner interface {
 	DeleteForPN(ctx context.Context, pulse insolar.PulseNumber)
 }
 
@@ -115,7 +121,7 @@ func resetBits(value []byte, start uint8) []byte {
 
 	// Reset bits in starting byte.
 	mask := byte(0xFF)
-	mask <<= 8 - byte(startBit)
+	mask <<= 8 - startBit
 	result[startByte] = value[startByte] & mask
 
 	return result
@@ -133,7 +139,7 @@ func NewIDFromString(s string) insolar.JetID {
 
 func parsePrefix(s string) []byte {
 	var prefix []byte
-	tail := s[:]
+	tail := s
 	for len(tail) > 0 {
 		offset := 8
 		if len(tail) < 8 {
