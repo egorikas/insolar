@@ -85,14 +85,4 @@ const (
 
 	// ScopeJetKeeper is the scope for a jet id storage.
 	ScopeJetKeeper Scope = 10
-
-	// ScopePulseSequence is the scope for a pulse sequence.
-	ScopePulseSequence Scope = 11
-
-	// ScopeReplicaPosition is the scope for replication process position.
-	ScopeReplicaPosition = 12
-	// ScopePulseLabel is the scope for ordered record pulse labels.
-	ScopePulseLabel = 13
-	// ScopeSequenceRecord is the scope for ordered record storage.
-	ScopeSequenceRecord = 14
 )
