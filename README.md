@@ -103,6 +103,8 @@ After testing, you can stop all nodes by pressing Ctrl+C.
 
 See [Contributing Guidelines](.github/CONTRIBUTING.md).
 
+[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/0)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/0)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/1)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/1)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/2)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/2)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/3)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/3)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/4)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/4)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/5)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/5)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/6)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/6)[![](https://sourcerer.io/fame/sofiayem/insolar/insolar/images/7)](https://sourcerer.io/fame/sofiayem/insolar/insolar/links/7)
+
 ## License
 
 This project is licensed under the terms of the [Apache license 2.0](LICENSE), except for the [Network](network) subdirectory, which is licensed under the terms of the [Modified BSD 3-Clause Clear License](network/LICENSE.md).
