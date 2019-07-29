@@ -4,6 +4,7 @@ package payload;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/insolar/insolar/insolar/record/record.proto";
+import "github.com/insolar/insolar/insolar/pulse/pulse.proto";
 
 
 message Meta {
@@ -323,8 +324,9 @@ message GetLightInitialState {
 message LightInitialState {
     uint32 Polymorph = 16;
 
-    repeated bytes JetIDs = 20 [(gogoproto.customtype) = "github.com/insolar/insolar/insolar.JetID", (gogoproto.nullable) = false];
-    repeated bytes Drops = 21;
+    pulse.PulseProto Pulse = 20 [(gogoproto.nullable) = false];
+    repeated bytes JetIDs = 21 [(gogoproto.customtype) = "github.com/insolar/insolar/insolar.JetID", (gogoproto.nullable) = false];
+    repeated bytes Drops = 22;
 }
 
 message GetIndex {

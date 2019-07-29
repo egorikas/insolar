@@ -24,6 +24,7 @@ import (
 	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/jet"
 	"github.com/insolar/insolar/insolar/payload"
+	"github.com/insolar/insolar/insolar/pulse"
 	"github.com/insolar/insolar/ledger/drop"
 	"github.com/insolar/insolar/ledger/light/hot"
 	"github.com/pkg/errors"
@@ -42,6 +43,7 @@ func NewStateIniter(
 	jetModifier jet.Modifier,
 	jetReleaser hot.JetReleaser,
 	drops drop.Modifier,
+	pulses pulse.Appender,
 	coordinator jet.Coordinator,
 	sender bus.Sender,
 ) *StateIniterDefault {
@@ -49,6 +51,7 @@ func NewStateIniter(
 		jetModifier: jetModifier,
 		jetReleaser: jetReleaser,
 		drops:       drops,
+		pulses:      pulses,
 		coordinator: coordinator,
 		sender:      sender,
 	}
@@ -59,13 +62,14 @@ type StateIniterDefault struct {
 	jetModifier jet.Modifier
 	jetReleaser hot.JetReleaser
 	drops       drop.Modifier
+	pulses      pulse.Appender
 	coordinator jet.Coordinator
 	sender      bus.Sender
 }
 
-func (s *StateIniterDefault) PrepareState(ctx context.Context, pulse insolar.PulseNumber) error {
-	if pulse < insolar.FirstPulseNumber {
-		return errors.Errorf("invalid pulse %s for light state initialization ", pulse)
+func (s *StateIniterDefault) PrepareState(ctx context.Context, initPulse insolar.PulseNumber) error {
+	if initPulse < insolar.FirstPulseNumber {
+		return errors.Errorf("invalid pulse %s for light state initialization ", initPulse)
 	}
 
 	heavyRef, err := s.coordinator.Heavy(ctx)
@@ -74,7 +78,7 @@ func (s *StateIniterDefault) PrepareState(ctx context.Context, pulse insolar.Pul
 	}
 
 	msg, err := payload.NewMessage(&payload.GetLightInitialState{
-		Pulse: pulse,
+		Pulse: initPulse,
 	})
 	if err != nil {
 		return errors.Wrap(err, "failed to create GetInitialState message")
@@ -97,8 +101,20 @@ func (s *StateIniterDefault) PrepareState(ctx context.Context, pulse insolar.Pul
 		return fmt.Errorf("unexpected reply %T", pl)
 	}
 
+	validateHeavyResponse(*initialState)
+
+	var PrevPulse *insolar.Pulse
+	{
+		prevPulseBuf := initialState.Pulse
+		PrevPulse = pulse.FromProto(&prevPulseBuf)
+		err = s.pulses.Append(ctx, *PrevPulse)
+		if err != nil {
+			return errors.Wrap(err, "failed to save previous pulse from heavy")
+		}
+	}
+
 	jets := initialState.JetIDs
-	err = s.jetModifier.Update(ctx, pulse, true, jets...)
+	err = s.jetModifier.Update(ctx, initPulse, true, jets...)
 	if err != nil {
 		return errors.Wrap(err, "failed to update jets")
 	}
@@ -115,6 +131,15 @@ func (s *StateIniterDefault) PrepareState(ctx context.Context, pulse insolar.Pul
 		if err != nil {
 			return errors.Wrap(err, "failed to decode drop")
 		}
+
+		if !d.Pulse.Equal(PrevPulse.PulseNumber) {
+			return fmt.Errorf(
+				"drop pulse number %s is not equal previous pulse number %s",
+				d.Pulse,
+				PrevPulse.PulseNumber,
+			)
+		}
+
 		err = s.drops.Set(ctx, *d)
 		if err != nil {
 			return errors.Wrap(err, "failed to set drop")
@@ -122,4 +147,8 @@ func (s *StateIniterDefault) PrepareState(ctx context.Context, pulse insolar.Pul
 	}
 
 	return nil
+}
+
+func validateHeavyResponse(state payload.LightInitialState) bool {
+	panic("not implemented yet")
 }

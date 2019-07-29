@@ -163,7 +163,7 @@ func (m *PulseManager) setUnderGilSection(ctx context.Context, newPulse insolar.
 		}
 	}()
 
-	// FIXME: special for @ivanshibitov (uncomment this when INS-3031 is ready).
+	// FIXME: special for @ilyapt (uncomment this when INS-3031 is ready).
 	// if err := m.StateIniter.PrepareState(ctx, newPulse.PulseNumber); err != nil {
 	// 	logger.Error("failed to prepare light for start: ", err.Error())
 	// 	panic("failed to prepare light for start")
