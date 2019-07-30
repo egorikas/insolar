@@ -38,13 +38,13 @@ func TestCreateTransferGetBalance(t *testing.T) {
 }
 
 func transfer(memberFrom apiclient.MemberObject, memberTo apiclient.MemberObject) {
+	defer Wg.Done()
 	result := memberFrom.TransferMoney(memberTo, "100")
 	Logger.Printf("Transfer from: %v to %v",
 		memberFrom.MemberResponse.Result.CallResult.Reference,
 		memberTo.MemberResponse.Result.CallResult.Reference)
 	Logger.Println("result: " + string(result))
 	time.Sleep(100 + time.Millisecond)
-	defer Wg.Done()
 }
 
 func TestJetSplit(t *testing.T) {
