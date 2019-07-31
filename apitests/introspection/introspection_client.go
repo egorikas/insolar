@@ -74,13 +74,24 @@ type Filter struct {
 	Filtered string `json:"Filtered"`
 }
 
-func SendGetRequest(url string) []byte {
+type SetFilterJSON struct {
+	Name   string `json:Name`
+	Enable bool   `json:"Enable"`
+}
 
+func SendEmptyPostRequest(url string) []byte {
+	responseBody := SendRequest(nil, url, "POST", "")
+	return responseBody
+
+}
+
+func SendRequest(payload []byte, intUrl string, method string, contentType string) []byte {
 	// Create a new HTTP request and send it:
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(nil))
+	request, err := http.NewRequest(method, intUrl, bytes.NewBuffer(payload))
 	if err != nil {
 		log.Fatalln(err)
 	}
+	request.Header.Set("ContentType", contentType)
 	response, err := introspectionClient.Do(request)
 	if err != nil {
 		log.Fatalln(err)
@@ -93,6 +104,7 @@ func SendGetRequest(url string) []byte {
 		log.Fatalln(err)
 	}
 	fmt.Println(string(responseBody))
+
 	return responseBody
 }
 
@@ -102,7 +114,7 @@ func GetMessageNodeCounters(introspectionPortAddress string) Counters {
 	var err error
 	var responce []byte
 
-	responce = SendGetRequest("http://" + introspectionPortAddress + "/getMessagesStat")
+	responce = SendEmptyPostRequest("http://" + introspectionPortAddress + "/getMessagesStat")
 	err = json.Unmarshal(responce, &messageCounters)
 	if err != nil {
 		log.Fatalln(err)
@@ -110,6 +122,24 @@ func GetMessageNodeCounters(introspectionPortAddress string) Counters {
 	return messageCounters
 }
 
-func SetMessageNodeCounters(introspectionPortAddress string) {
+func SetMessageNodeCounters(introspectionPortAddress string, messageType string, enableFilter bool) SetFilterJSON {
+	setMessageTypeFilterEnable := SetFilterJSON{
+		Name:   messageType,
+		Enable: enableFilter,
+	}
 
+	jsonPayload, err := json.Marshal(setMessageTypeFilterEnable)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	var response []byte
+	response = SendRequest(jsonPayload, "http://"+introspectionPortAddress+"/setMessagesFilter", "POST", "application/json")
+	var result SetFilterJSON
+	// Unmarshal the response:
+	err = json.Unmarshal(response, &result)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return result
 }
