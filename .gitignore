@@ -55,3 +55,8 @@ network_cache
 
 # Local doc build directory
 /docs/build
+
+# codegen for api tests
+/apitests/apiclient/insolar-api
+/apitests/apiclient/insolar-internal-api
+/apitests/apiclient/insolar-observer-api
