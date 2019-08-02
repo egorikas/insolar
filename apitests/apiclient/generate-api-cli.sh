@@ -3,39 +3,30 @@
 set -x
 
 WORKDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+SRC_DIR=~/go/src/github.com/insolar
 SPEC_BASE_DIR=${WORKDIR}
 #REPOS=( "insolar-observer-api" "insolar-internal-api" "insolar-api" )
-#REPOS=( "insolar-api" )
-#
-#for repo_name in "${REPOS[@]}"
-#do
-#  if [[ ! -f ${SPEC_BASE_DIR}/${repo_name} ]]; then
-#	  git clone git@github.com:insolar/${repo_name}.git ${SPEC_BASE_DIR}/${repo_name}
-#	fi
-#	cd ${SPEC_BASE_DIR}/${repo_name} || exit 0
-#  if [[ ${repo_name} == "insolar-api" ]]; then
-#    git checkout 1.0.0
-#    git pull
-#  else
-#    git pull origin master
-#  fi
-#
-#	npm install
-#  npm run export -- --collapse
-#  mkdir openapi
-#  openapi-generator generate \
-#      --input-spec api-exported.yaml \
-#      --generator-name go \
-#      --output ${SPEC_BASE_DIR}/${repo_name} \
-#      --package-name insolar-api-cli \
-#      --skip-validate-spec
-#done
+REPOS=( "insolar-api" )
 
-# TODO kostil
-openapi-generator generate \
-      --input-spec api-exported-template.yaml \
+for repo_name in "${REPOS[@]}"
+do
+  repo_dir=${SRC_DIR}/${repo_name}
+  if [[ ! -d ${repo_dir} ]]; then
+    echo repository ${repo_dir} not found;
+    exit 0;
+  fi
+	cd ${repo_dir} || exit
+
+	npm install
+  npm run export -- --collapse
+
+  openapi-generator generate \
+      --input-spec api-exported.yaml \
       --generator-name go \
-      --output ${SPEC_BASE_DIR}/apiclient \
+      --output ${SPEC_BASE_DIR}/${repo_name}/apiclient \
       --package-name apiclient \
-      --model-package models \
       --skip-validate-spec
+
+  cp ${repo_dir}/api-exported.yaml ${WORKDIR}/
+  cd ${WORKDIR} || exit
+done
