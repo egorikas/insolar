@@ -1,0 +1,2470 @@
+openapi: 3.0.0
+info:
+  version: 0.1.0
+  title: Insolar API
+  contact:
+    name: Insolar dev team
+    url: 'https://insolar.io/about#team'
+    email: dev-support@insolar.io
+  description: >
+    [Insolar](https://github.com/insolar/insolar)'s JSON RPC 2.0 API
+    documentation.
+
+
+    # Definitions Overview
+
+
+    Insolar is being developed to provide interoperation between enterprises.
+
+
+    From a business perspective:
+
+      * Any enterprise is regarded as an *entity* with a corresponding *identity* — a **member** object stored in the blockchain.
+      * Any member has its own *account* to/from which the member can transfer funds.
+
+    From a technical perspective: 
+
+      * Every member object is identified by a **reference** in the blockchain.
+      * The reference is effectively the member's *address*.
+
+    Therefore, an entity wishing to transfer funds to/from its account from/to a
+    particular address, in Insolar's terms, is a member object identified by its
+    reference wishing to transfer funds to some other member identified by the
+    corresponding reference.
+
+
+    Insolar uses these terms in method and parameter names.
+
+
+    # Request Specification
+
+
+    Insolar has two types of requests: 
+
+
+    * Information requests that do not require authorization (by a seed);
+
+    * Contract requests that do.
+
+
+    Seed is a unique piece of information that:
+
+
+    * grants permission to send a request on the Insolar network;
+
+    * has a short lifespan;
+
+    * expires upon first use.
+
+
+    Both request types have the same *base* structure in accordance with the
+    [JSON RPC 2.0](https://www.jsonrpc.org/specification) specification.
+
+    For example, the `getSeed` request is as follows:
+
+
+    ```json
+
+    {
+        "jsonprc": "2.0",
+        "id": 1,
+        "method": "node.getSeed",
+        "params": ""
+    }
+
+    ```
+
+
+    To call a smart contract's method, acquire a permission to call it:
+
+
+    1. Send a [getSeed](/#operation/get-seed) information request and receive
+    the seed.
+
+    2. Form a contract request (e.g.,
+    [member.create](/#operation/member-create)) with the acquired seed.
+
+
+    Every contract request's payload must be hashed by the SHA-256 algorithm and
+    put into the [Digest HTTP
+    header](https://tools.ietf.org/html/rfc3230#section-4.3.2) as a Base64
+    string.
+
+
+    Digest, in turn, must be signed by the Elliptic Curve Digital Signature
+    Algorithm (ECDSA), with the signature being the Base64 string representation
+    of the [ASN.1 DER
+    format](https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-X.690-201508-I!!PDF-E&type=items).
+
+    The resulting string must be transmitted in the [Signature HTTP
+    header](https://tools.ietf.org/id/draft-cavage-http-signatures-11.html#sig-header).
+
+
+    For example:
+
+
+    ```
+
+    POST /<endpoint> HTTP/1.1
+
+    Host: <Host>
+
+    Date: Tue, 07 Jun 2019 20:51:35 GMT
+
+    Content-Type: application/json
+
+    Digest: SHA-256=<hashString>
+
+    Signature: keyId="member-rsa-key", algorithm="ecdsa", headers="digest",
+    signature=<signatureString>
+
+
+    { <payload> }
+
+    ```
+
+
+    The contract request's payload may be as follows:
+
+
+    ```json
+
+    {
+      "jsonprc": "2.0",
+      "id": 1,
+      "method": "contract.call",
+      "params": {
+        "seed": "<seed>",
+        "callSite": "member.create",
+        "callParams": {},
+        "publicKey": "<pubicKey>"
+      }
+    }
+
+    ```
+
+
+    where:
+
+
+    * `"method": "contract.call"` designates a call to a contract's method.
+
+    * `callSite` is the contract method's call point, in this case,
+    `member.create`.
+
+    * `callParams` is the contract method's parameters.
+
+    * `publicKey` is the public key, a Base64 string representation of a key in
+    [PEM format](https://tools.ietf.org/html/rfc1421).
+
+
+    # Errors
+
+
+    Insolar follows the JSON RPC API conventions on [error
+    codes](https://www.jsonrpc.org/specification#error_object), with values:
+
+
+    * `-31000`-`-31999` reserved for the Insolar network;
+
+    * `-200`-`-299` reserved for the wallet application;
+
+    * the rest available for other contracts.
+
+
+    # Versioning
+
+
+    The API is usually changed in each release of Insolar, so API calls are
+    versioned to ensure that clients do not break.
+
+
+    To lock to an API version, prefix the URL with the version number. For
+    example, calling `/api/rpc` is the same as calling `/v0.0.1/api/rpc`.
+
+
+    Insolar releases in the near future will support this version of the API, so
+    your client will continue to work even if it is talking to a newer API.
+
+
+    This documentation is for version 0.0.1 of the API. API versions do not have
+    correllations to Insolar Platform versions.
+servers:
+  - url: 127.0.0.1
+    description: Production server
+  - url: 127.0.0.1
+    description: Development server
+paths:
+  '/api/rpc#method=network.getInfo':
+    post:
+      summary: network.getInfo
+      description: >
+        Get references to base objects: `rootMember`, `rootDomain`, and
+        `nodeDomain`.
+      operationId: get-info
+      tags:
+        - Information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              required:
+                - jsonrpc
+                - method
+                - id
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - network.getInfo
+                params:
+                  type: object
+                  description: May be omitted as the method does not require any.
+              x-json-schema-id: definitions/RPCRequest.yaml
+              title: NetworkGetInfoRequest
+            example:
+              jsonrpc: '2.0'
+              method: network.getInfo
+              id: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: NetworkGetInfoResponse
+                x-json-schema-id: >-
+                  definitions/responses/Info.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  Base definition for HTTP JSON RPC 2.0 responses. OR Request's
+                  timeout has expired. OR Base definition for HTTP JSON RPC 2.0
+                  error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - rootDomain
+                      - rootMember
+                      - nodeDomain
+                      - traceID
+                    properties:
+                      rootDomain:
+                        type: string
+                        pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                        description: Reference to a root domain.
+                        example: >-
+                          1tJEDNVffdf4PQjxhKvQVc3D166RqhmFBS2gkBpGva.11111111111111111111111111111111
+                      rootMember:
+                        type: string
+                        pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                        description: Reference to a root member.
+                        example: >-
+                          1tJC7WqTjHrN5YvPC2x7dSiL4gouoHtoAVBUjK7JB6.11111111111111111111111111111111
+                      nodeDomain:
+                        type: string
+                        pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                        description: Reference to a node domain.
+                        example: >-
+                          1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                      traceID:
+                        type: string
+                        description: >-
+                          Internal debugging information. May be an empty
+                          string.
+                        example: 0b9ac245-2522-4364-9059-efc17907ce54
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: integer
+                        enum:
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Request's timeout has expired.
+  '/api/rpc#method=node.getStatus':
+    post:
+      summary: node.getStatus
+      description: |
+        Get blockchain network statistics.
+      operationId: get-status
+      tags:
+        - Information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              required:
+                - jsonrpc
+                - method
+                - id
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - node.getStatus
+                params:
+                  type: object
+                  description: May be omitted as the method does not require any.
+              x-json-schema-id: definitions/RPCRequest.yaml
+              title: NodeGetStatusRequest
+            example:
+              jsonrpc: '2.0'
+              method: node.getStatus
+              id: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: NodeGetStatusResponse
+                x-json-schema-id: >-
+                  definitions/responses/Status.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  Base definition for HTTP JSON RPC 2.0 responses. OR Request's
+                  timeout has expired. OR Base definition for HTTP JSON RPC 2.0
+                  error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - networkState
+                      - nodeState
+                      - additionalNodeState
+                      - origin
+                      - activeListSize
+                      - workingListSize
+                      - nodes
+                      - pulseNumber
+                      - entropy
+                      - version
+                    properties:
+                      networkState:
+                        type: string
+                        enum:
+                          - completeNetworkState
+                      nodeState:
+                        type: string
+                      additionalNodeState:
+                        type: string
+                      origin:
+                        title: Node
+                        description: Node description
+                        type: object
+                        required:
+                          - reference
+                          - role
+                          - isWorking
+                        properties:
+                          reference:
+                            type: string
+                            pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                          role:
+                            title: node Type
+                            type: string
+                            description: Node types
+                            enum:
+                              - heavy_material
+                              - light_material
+                              - virtual
+                            x-json-schema-id: definitions/types/nodeType.yaml
+                          isWorking:
+                            type: boolean
+                        x-json-schema-id: definitions/nodeShort.yaml
+                      activeListSize:
+                        type: integer
+                      workingListSize:
+                        type: integer
+                      nodes:
+                        type: array
+                        minItems: 1
+                        items:
+                          title: Node
+                          description: Node description
+                          type: object
+                          required:
+                            - reference
+                            - role
+                            - isWorking
+                          properties:
+                            reference:
+                              type: string
+                              pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                            role:
+                              title: node Type
+                              type: string
+                              description: Node types
+                              enum:
+                                - heavy_material
+                                - light_material
+                                - virtual
+                              x-json-schema-id: definitions/types/nodeType.yaml
+                            isWorking:
+                              type: boolean
+                          x-json-schema-id: definitions/nodeShort.yaml
+                      pulseNumber:
+                        type: integer
+                      entropy:
+                        type: string
+                      version:
+                        type: string
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: integer
+                        enum:
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Request's timeout has expired.
+              examples:
+                30nodes:
+                  externalValue: /examples/status.Get/1.30.json
+                3nodes:
+                  externalValue: /examples/status.Get/2.3.json
+  '/api/rpc#method=node.getSeed':
+    post:
+      summary: node.getSeed
+      description: >
+        Get seed (random byte range). Seed is a unique piece of information
+        that:
+
+
+        * grants permission to send a request on the Insolar network;
+
+        * has a short lifespan;
+
+        * expires upon first use.
+      operationId: get-seed
+      tags:
+        - Information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              required:
+                - jsonrpc
+                - method
+                - id
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - node.getSeed
+                params:
+                  type: object
+                  description: May be omitted as the method does not require any.
+              x-json-schema-id: definitions/RPCRequest.yaml
+              title: NodeGetSeedRequest
+            example:
+              jsonrpc: '2.0'
+              method: node.getSeed
+              id: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: NodeGetSeedResponse
+                x-json-schema-id: >-
+                  definitions/responses/Seed.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  Base definition for HTTP JSON RPC 2.0 responses. OR Request's
+                  timeout has expired. OR Base definition for HTTP JSON RPC 2.0
+                  error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - seed
+                    properties:
+                      seed:
+                        type: string
+                        description: Base64 string with a random range of bytes.
+                        example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+                  error:
+                    type: object
+                    required:
+                      - code
+                      - message
+                    properties:
+                      code:
+                        type: integer
+                        enum:
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Request's timeout has expired.
+  '/api/rpc#member.create':
+    post:
+      summary: member.create
+      description: |
+        Create:
+
+        * a new `member` object, and
+        * a corresponding account;
+
+        Given a public key (`publicKey`) to associate with the new member.
+
+        Returns a `reference` to the new `member` object.
+      operationId: member-create
+      tags:
+        - Member
+      parameters:
+        - in: header
+          name: Digest
+          schema:
+            type: string
+            description: >
+              [Digest HTTP
+              header](https://tools.ietf.org/html/rfc3230#section-4.3.2) with an
+              SHA-256 hash of the request's payload in a Base64 `<hashString>`.
+            pattern: ^SHA-256=.+$
+          example: SHA-256=<hashString>
+          required: true
+        - in: header
+          name: Signature
+          schema:
+            type: string
+            description: >
+              [Signature HTTP
+              header](https://tools.ietf.org/id/draft-cavage-http-signatures-11.html#sig-header)
+              with a signed `Digest` in a Base64 `<signatureString>`.
+
+
+              The signature is:
+
+
+              * in [ASN.1 DER
+              format](https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-X.690-201508-I!!PDF-E&type=items);
+
+              * generated by an ECDSA secret key;
+
+              * checked by the paired public key (`publicKey`).
+          example: >-
+            keyId="member-pub-key", algorithm="ecdsa", headers="digest",
+            signature=<signatureString>
+          required: true
+      x-dredd-http-signed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              title: MemberCreateRequest
+              description: |-
+                Call to a contract's `callSite`, it's internal 'method'.
+                 OR Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              x-json-schema-id: methods/call.yaml OR definitions/RPCRequest.yaml
+              required:
+                - jsonrpc
+                - method
+                - id
+                - params
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - contract.call
+                params:
+                  $ref: MemberCreateRequestParams
+            example:
+              jsonrpc: '2.0'
+              method: contract.call
+              id: 1
+              params:
+                seed: fhDEwRRbSnYnbMnALKMh8gXdzaSvRv/nfsGC9S7kqik=
+                callSite: member.create
+                publicKey: >-
+                  -----BEGIN PUBLIC
+                  KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMSbA4KvO/jlwY+8WFDEdwhCLlsEC\nF3/GYvu9iTWHwCctx1wTbGGjNLY03EjXyYxaf8coNbSbZeu+jXcWeMHG0A==\n-----END
+                  PUBLIC KEY-----
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: MemberCreateResponse
+                x-json-schema-id: >-
+                  definitions/responses/member.yaml OR
+                  definitions/responses/success.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/error-resp-to-signedReq.yaml OR
+                  definitions/responses/errors/resultError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  A successful response. OR Base definition for HTTP JSON RPC
+                  2.0 responses. OR Error response to a signed request. Can
+                  contain multiple errors with different codes. OR Method error.
+                  OR Base definition for HTTP JSON RPC 2.0 error responses. OR
+                  Request's timeout has expired. OR Base definition for HTTP
+                  JSON RPC 2.0 error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - callResult
+                      - requestReference
+                      - traceID
+                    properties:
+                      callResult:
+                        type: object
+                        description: Method's call result.
+                        required:
+                          - reference
+                        properties:
+                          reference:
+                            type: string
+                            pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                            description: Reference to the `member` object.
+                            example: >-
+                              1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+                      requestReference:
+                        type: string
+                        description: >-
+                          Reference to a request record initialized by the
+                          method's call. May be an empty string.
+                        example: >-
+                          1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                      traceID:
+                        type: string
+                        description: >-
+                          Internal debugging information. May be an empty
+                          string.
+                        example: 0b9ac245-2522-4364-9059-efc17907ce54
+                  error:
+                    required:
+                      - data
+                      - code
+                      - message
+                    properties:
+                      data:
+                        type: object
+                        description: Additional error information.
+                        required:
+                          - requestReference
+                          - traceID
+                        properties:
+                          requestReference:
+                            type: string
+                            description: >-
+                              Reference to a request record initialized by the
+                              method's call. May be an empty string.
+                            example: >-
+                              1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                          traceID:
+                            type: string
+                            description: >-
+                              Internal debugging information. May be an empty
+                              string.
+                            example: 0b9ac245-2522-4364-9059-efc17907ce54
+                      code:
+                        type: integer
+                        enum:
+                          - -31420
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Contract's method has returned an error.
+                          - Request's timeout has expired.
+                    type: object
+  '/api/rpc#member.get':
+    post:
+      summary: member.get
+      description: >
+        Authorize in the Insolar network — send a signed getter with your public
+        key that returns:
+
+
+        * (required) a reference to your `member` object and,
+
+        * (optional) an associated `migrationAddress` (if any) — but only during
+        the migration period.
+      operationId: member-get
+      tags:
+        - Member
+      parameters:
+        - in: header
+          name: Digest
+          schema:
+            type: string
+            description: >
+              [Digest HTTP
+              header](https://tools.ietf.org/html/rfc3230#section-4.3.2) with an
+              SHA-256 hash of the request's payload in a Base64 `<hashString>`.
+            pattern: ^SHA-256=.+$
+          example: SHA-256=<hashString>
+          required: true
+        - in: header
+          name: Signature
+          schema:
+            type: string
+            description: >
+              [Signature HTTP
+              header](https://tools.ietf.org/id/draft-cavage-http-signatures-11.html#sig-header)
+              with a signed `Digest` in a Base64 `<signatureString>`.
+
+
+              The signature is:
+
+
+              * in [ASN.1 DER
+              format](https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-X.690-201508-I!!PDF-E&type=items);
+
+              * generated by an ECDSA secret key;
+
+              * checked by the paired public key (`publicKey`).
+          example: >-
+            keyId="member-pub-key", algorithm="ecdsa", headers="digest",
+            signature=<signatureString>
+          required: true
+      x-dredd-http-signed: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: |-
+                Call to a contract's `callSite`, it's internal 'method'.
+                 OR Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              x-json-schema-id: methods/call.yaml OR definitions/RPCRequest.yaml
+              required:
+                - jsonrpc
+                - method
+                - id
+                - params
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - contract.call
+                params:
+                  $ref: MemberGetRequestParams
+              title: MemberGetRequest
+            example:
+              jsonrpc: '2.0'
+              method: contract.call
+              id: 1
+              params:
+                seed: fhDEwRRbSnYnbMnALKMh8gXdzaSvRv/nfsGC9S7kqik=
+                callSite: member.get
+                publicKey: >-
+                  -----BEGIN PUBLIC
+                  KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMSbA4KvO/jlwY+8WFDEdwhCLlsEC\nF3/GYvu9iTWHwCctx1wTbGGjNLY03EjXyYxaf8coNbSbZeu+jXcWeMHG0A==\n-----END
+                  PUBLIC KEY-----
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: MemberGetResponse
+                x-json-schema-id: >-
+                  definitions/responses/member-and-migrationAddress.yaml OR
+                  definitions/responses/member.yaml OR
+                  definitions/responses/success.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/error-resp-to-signedReq.yaml OR
+                  definitions/responses/errors/resultError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  A successful response. OR Base definition for HTTP JSON RPC
+                  2.0 responses. OR Error response to a signed request. Can
+                  contain multiple errors with different codes. OR Method error.
+                  OR Base definition for HTTP JSON RPC 2.0 error responses. OR
+                  Request's timeout has expired. OR Base definition for HTTP
+                  JSON RPC 2.0 error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - callResult
+                      - requestReference
+                      - traceID
+                    properties:
+                      callResult:
+                        type: object
+                        description: Method's call result.
+                        required:
+                          - reference
+                        properties:
+                          reference:
+                            type: string
+                            pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                            description: Reference to the `member` object.
+                            example: >-
+                              1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+                          migrationAddress:
+                            type: string
+                            example: '0xF4e1507486dFE411785B00d7D00A1f1a484f00E6'
+                            description: >-
+                              Address in the Insolar network — transfer
+                              destination (deposit) for Ethereum tokens during
+                              the migration period.
+                      requestReference:
+                        type: string
+                        description: >-
+                          Reference to a request record initialized by the
+                          method's call. May be an empty string.
+                        example: >-
+                          1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                      traceID:
+                        type: string
+                        description: >-
+                          Internal debugging information. May be an empty
+                          string.
+                        example: 0b9ac245-2522-4364-9059-efc17907ce54
+                  error:
+                    required:
+                      - data
+                      - code
+                      - message
+                    properties:
+                      data:
+                        type: object
+                        description: Additional error information.
+                        required:
+                          - requestReference
+                          - traceID
+                        properties:
+                          requestReference:
+                            type: string
+                            description: >-
+                              Reference to a request record initialized by the
+                              method's call. May be an empty string.
+                            example: >-
+                              1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                          traceID:
+                            type: string
+                            description: >-
+                              Internal debugging information. May be an empty
+                              string.
+                            example: 0b9ac245-2522-4364-9059-efc17907ce54
+                      code:
+                        type: integer
+                        enum:
+                          - -31420
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Contract's method has returned an error.
+                          - Request's timeout has expired.
+                    type: object
+  '/api/rpc#member.migrationCreate':
+    post:
+      summary: member.migrationCreate
+      description: >
+        Create:
+
+
+        * a new `member` object, and
+
+        * a corresponding account;
+
+
+        Given a public key to associate with the new member.
+
+
+        Returns:
+
+        * a `reference` to the new `member` object;
+
+        * a single `migrationAddress` — only during the period of token
+        migration from the Ethereum network.
+      operationId: member-migration-create
+      tags:
+        - Migration
+      parameters:
+        - in: header
+          name: Digest
+          schema:
+            type: string
+            description: >
+              [Digest HTTP
+              header](https://tools.ietf.org/html/rfc3230#section-4.3.2) with an
+              SHA-256 hash of the request's payload in a Base64 `<hashString>`.
+            pattern: ^SHA-256=.+$
+          example: SHA-256=<hashString>
+          required: true
+        - in: header
+          name: Signature
+          schema:
+            type: string
+            description: >
+              [Signature HTTP
+              header](https://tools.ietf.org/id/draft-cavage-http-signatures-11.html#sig-header)
+              with a signed `Digest` in a Base64 `<signatureString>`.
+
+
+              The signature is:
+
+
+              * in [ASN.1 DER
+              format](https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-X.690-201508-I!!PDF-E&type=items);
+
+              * generated by an ECDSA secret key;
+
+              * checked by the paired public key (`publicKey`).
+          example: >-
+            keyId="member-pub-key", algorithm="ecdsa", headers="digest",
+            signature=<signatureString>
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: |-
+                Call to a contract's `callSite`, it's internal 'method'.
+                 OR Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              x-json-schema-id: methods/call.yaml OR definitions/RPCRequest.yaml
+              required:
+                - jsonrpc
+                - method
+                - id
+                - params
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - contract.call
+                params:
+                  $ref: MemberMigrationCreateRequestParams
+              title: MemberMigrationCreateRequest
+            example:
+              jsonrpc: '2.0'
+              method: contract.call
+              id: 1
+              params:
+                seed: fhDEwRRbSnYnbMnALKMh8gXdzaSvRv/nfsGC9S7kqik=
+                callSite: member.migrationCreate
+                publicKey: >-
+                  -----BEGIN PUBLIC
+                  KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMSbA4KvO/jlwY+8WFDEdwhCLlsEC\nF3/GYvu9iTWHwCctx1wTbGGjNLY03EjXyYxaf8coNbSbZeu+jXcWeMHG0A==\n-----END
+                  PUBLIC KEY-----
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: MemberMigrationCreateResponse
+                x-json-schema-id: >-
+                  definitions/responses/member-and-migrationAddress.yaml OR
+                  definitions/responses/member.yaml OR
+                  definitions/responses/success.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/error-resp-to-signedReq.yaml OR
+                  definitions/responses/errors/resultError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  A successful response. OR Base definition for HTTP JSON RPC
+                  2.0 responses. OR Error response to a signed request. Can
+                  contain multiple errors with different codes. OR Method error.
+                  OR Base definition for HTTP JSON RPC 2.0 error responses. OR
+                  Request's timeout has expired. OR Base definition for HTTP
+                  JSON RPC 2.0 error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - callResult
+                      - requestReference
+                      - traceID
+                    properties:
+                      callResult:
+                        type: object
+                        description: Method's call result.
+                        required:
+                          - reference
+                        properties:
+                          reference:
+                            type: string
+                            pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                            description: Reference to the `member` object.
+                            example: >-
+                              1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+                          migrationAddress:
+                            type: string
+                            example: '0xF4e1507486dFE411785B00d7D00A1f1a484f00E6'
+                            description: >-
+                              Address in the Insolar network — transfer
+                              destination (deposit) for Ethereum tokens during
+                              the migration period.
+                      requestReference:
+                        type: string
+                        description: >-
+                          Reference to a request record initialized by the
+                          method's call. May be an empty string.
+                        example: >-
+                          1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                      traceID:
+                        type: string
+                        description: >-
+                          Internal debugging information. May be an empty
+                          string.
+                        example: 0b9ac245-2522-4364-9059-efc17907ce54
+                  error:
+                    required:
+                      - data
+                      - code
+                      - message
+                    properties:
+                      data:
+                        type: object
+                        description: Additional error information.
+                        required:
+                          - requestReference
+                          - traceID
+                        properties:
+                          requestReference:
+                            type: string
+                            description: >-
+                              Reference to a request record initialized by the
+                              method's call. May be an empty string.
+                            example: >-
+                              1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                          traceID:
+                            type: string
+                            description: >-
+                              Internal debugging information. May be an empty
+                              string.
+                            example: 0b9ac245-2522-4364-9059-efc17907ce54
+                      code:
+                        type: integer
+                        enum:
+                          - -31420
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Contract's method has returned an error.
+                          - Request's timeout has expired.
+                    type: object
+  '/api/rpc#member.transfer':
+    post:
+      summary: member.transfer
+      description: >
+        Transfer some `amount` of coins:
+
+
+        * from your account given your member's `reference` returned by
+        [member.create](/#operation/member-create);
+
+        * to some member's acсount identified by `toMemberReference` in
+        `callParams`.
+
+
+        Returns factual fee value according to the current tariff.
+      operationId: member-transfer
+      tags:
+        - Member
+      parameters:
+        - in: header
+          name: Digest
+          schema:
+            type: string
+            description: >
+              [Digest HTTP
+              header](https://tools.ietf.org/html/rfc3230#section-4.3.2) with an
+              SHA-256 hash of the request's payload in a Base64 `<hashString>`.
+            pattern: ^SHA-256=.+$
+          example: SHA-256=<hashString>
+          required: true
+        - in: header
+          name: Signature
+          schema:
+            type: string
+            description: >
+              [Signature HTTP
+              header](https://tools.ietf.org/id/draft-cavage-http-signatures-11.html#sig-header)
+              with a signed `Digest` in a Base64 `<signatureString>`.
+
+
+              The signature is:
+
+
+              * in [ASN.1 DER
+              format](https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-X.690-201508-I!!PDF-E&type=items);
+
+              * generated by an ECDSA secret key;
+
+              * checked by the paired public key (`publicKey`).
+          example: >-
+            keyId="member-pub-key", algorithm="ecdsa", headers="digest",
+            signature=<signatureString>
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: |-
+                Call to a contract's `callSite`, it's internal 'method'.
+                 OR Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              x-json-schema-id: methods/call.yaml OR definitions/RPCRequest.yaml
+              required:
+                - jsonrpc
+                - method
+                - id
+                - params
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - contract.call
+                params:
+                  $ref: MemberTransferRequestParams
+              title: MemberTransferRequest
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: MemberTransferResponse
+                x-json-schema-id: >-
+                  definitions/responses/transfer.yaml OR
+                  definitions/responses/success.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/error-resp-to-signedReq.yaml OR
+                  definitions/responses/errors/resultError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                description: >-
+                  A successful response. OR Base definition for HTTP JSON RPC
+                  2.0 responses. OR Error response to a signed request. Can
+                  contain multiple errors with different codes. OR Method error.
+                  OR Base definition for HTTP JSON RPC 2.0 error responses. OR
+                  Request's timeout has expired. OR Base definition for HTTP
+                  JSON RPC 2.0 error responses.
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - callResult
+                      - requestReference
+                      - traceID
+                    properties:
+                      callResult:
+                        type: object
+                        description: Method's call result.
+                        required:
+                          - fee
+                        properties:
+                          fee:
+                            type: string
+                            example: '10'
+                            description: >-
+                              Factual transfer's fee value according to the
+                              current tariff.
+                      requestReference:
+                        type: string
+                        description: >-
+                          Reference to a request record initialized by the
+                          method's call. May be an empty string.
+                        example: >-
+                          1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                      traceID:
+                        type: string
+                        description: >-
+                          Internal debugging information. May be an empty
+                          string.
+                        example: 0b9ac245-2522-4364-9059-efc17907ce54
+                  error:
+                    required:
+                      - data
+                      - code
+                      - message
+                    properties:
+                      data:
+                        type: object
+                        description: Additional error information.
+                        required:
+                          - requestReference
+                          - traceID
+                        properties:
+                          requestReference:
+                            type: string
+                            description: >-
+                              Reference to a request record initialized by the
+                              method's call. May be an empty string.
+                            example: >-
+                              1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                          traceID:
+                            type: string
+                            description: >-
+                              Internal debugging information. May be an empty
+                              string.
+                            example: 0b9ac245-2522-4364-9059-efc17907ce54
+                      code:
+                        type: integer
+                        enum:
+                          - -31420
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Contract's method has returned an error.
+                          - Request's timeout has expired.
+                    type: object
+  '/api/rpc#deposit.transfer':
+    post:
+      summary: deposit.transfer
+      description: >
+        Transfer some `amount` of coins:
+
+
+        * from your `ACTIVE` (out of holding period) deposit identified by
+        `ethTxHash` in `callParams`;
+
+        * to your account identified by your member's `reference` returned by
+        [member.create](/#operation/member-create).
+      operationId: deposit-transfer
+      tags:
+        - Migration
+      parameters:
+        - in: header
+          name: Digest
+          schema:
+            type: string
+            description: >
+              [Digest HTTP
+              header](https://tools.ietf.org/html/rfc3230#section-4.3.2) with an
+              SHA-256 hash of the request's payload in a Base64 `<hashString>`.
+            pattern: ^SHA-256=.+$
+          example: SHA-256=<hashString>
+          required: true
+        - in: header
+          name: Signature
+          schema:
+            type: string
+            description: >
+              [Signature HTTP
+              header](https://tools.ietf.org/id/draft-cavage-http-signatures-11.html#sig-header)
+              with a signed `Digest` in a Base64 `<signatureString>`.
+
+
+              The signature is:
+
+
+              * in [ASN.1 DER
+              format](https://www.itu.int/rec/dologin_pub.asp?lang=e&id=T-REC-X.690-201508-I!!PDF-E&type=items);
+
+              * generated by an ECDSA secret key;
+
+              * checked by the paired public key (`publicKey`).
+          example: >-
+            keyId="member-pub-key", algorithm="ecdsa", headers="digest",
+            signature=<signatureString>
+          required: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: |-
+                Call to a contract's `callSite`, it's internal 'method'.
+                 OR Base definition for HTTP JSON RPC 2.0 requests.
+              type: object
+              x-json-schema-id: methods/call.yaml OR definitions/RPCRequest.yaml
+              required:
+                - jsonrpc
+                - method
+                - id
+                - params
+              properties:
+                jsonrpc:
+                  type: string
+                  enum:
+                    - '2.0'
+                  example: '2.0'
+                id:
+                  description: Request's ID to link it with the corresponding result.
+                  type: string
+                  example: 1
+                method:
+                  type: string
+                  example: getSeed
+                  enum:
+                    - contract.call
+                params:
+                  $ref: DepositTransferRequestParams
+              title: DepositTransferRequest
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                title: DepositTransferResponse
+                description: >-
+                  A successful response. OR Base definition for HTTP JSON RPC
+                  2.0 responses. OR Error response to a signed request. Can
+                  contain multiple errors with different codes. OR Method error.
+                  OR Base definition for HTTP JSON RPC 2.0 error responses. OR
+                  Request's timeout has expired. OR Base definition for HTTP
+                  JSON RPC 2.0 error responses.
+                x-json-schema-id: >-
+                  definitions/responses/success.yaml OR
+                  definitions/responses/RPCResponse.yaml OR
+                  definitions/responses/errors/error-resp-to-signedReq.yaml OR
+                  definitions/responses/errors/resultError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml OR
+                  definitions/responses/errors/timeoutError.yaml OR
+                  definitions/responses/errors/RPCErrorResponse.yaml
+                type: object
+                required:
+                  - jsonrpc
+                  - id
+                  - result
+                  - error
+                properties:
+                  jsonrpc:
+                    type: string
+                    enum:
+                      - '2.0'
+                  id:
+                    description: ID passed by the request.
+                    example: 1
+                  result:
+                    type: object
+                    required:
+                      - callResult
+                      - requestReference
+                      - traceID
+                    properties:
+                      callResult:
+                        type: object
+                        description: Method's call result.
+                      requestReference:
+                        type: string
+                        description: >-
+                          Reference to a request record initialized by the
+                          method's call. May be an empty string.
+                        example: >-
+                          1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                      traceID:
+                        type: string
+                        description: >-
+                          Internal debugging information. May be an empty
+                          string.
+                        example: 0b9ac245-2522-4364-9059-efc17907ce54
+                  error:
+                    required:
+                      - data
+                      - code
+                      - message
+                    properties:
+                      data:
+                        type: object
+                        description: Additional error information.
+                        required:
+                          - requestReference
+                          - traceID
+                        properties:
+                          requestReference:
+                            type: string
+                            description: >-
+                              Reference to a request record initialized by the
+                              method's call. May be an empty string.
+                            example: >-
+                              1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                          traceID:
+                            type: string
+                            description: >-
+                              Internal debugging information. May be an empty
+                              string.
+                            example: 0b9ac245-2522-4364-9059-efc17907ce54
+                      code:
+                        type: integer
+                        enum:
+                          - -31420
+                          - -31408
+                      message:
+                        type: string
+                        enum:
+                          - Contract's method has returned an error.
+                          - Request's timeout has expired.
+                    type: object
+tags:
+  - name: Information
+  - name: Member
+  - name: Migration
+components:
+  schemas:
+    definitions-RPCRequest-yaml:
+      description: Base definition for HTTP JSON RPC 2.0 requests.
+      type: object
+      required:
+        - jsonrpc
+        - method
+        - id
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+          example: '2.0'
+        id:
+          description: Request's ID to link it with the corresponding result.
+          type: string
+          example: 1
+        method:
+          type: string
+          example: getSeed
+        params:
+          type: object
+      x-json-schema-id: definitions/RPCRequest.yaml
+    definitions-responses-Info-yaml:
+      title: Success
+      x-json-schema-id: >-
+        definitions/responses/Info.yaml OR
+        definitions/responses/RPCResponse.yaml
+      description: Base definition for HTTP JSON RPC 2.0 responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - rootDomain
+            - rootMember
+            - nodeDomain
+            - traceID
+          properties:
+            rootDomain:
+              type: string
+              pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+              description: Reference to a root domain.
+              example: >-
+                1tJEDNVffdf4PQjxhKvQVc3D166RqhmFBS2gkBpGva.11111111111111111111111111111111
+            rootMember:
+              type: string
+              pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+              description: Reference to a root member.
+              example: >-
+                1tJC7WqTjHrN5YvPC2x7dSiL4gouoHtoAVBUjK7JB6.11111111111111111111111111111111
+            nodeDomain:
+              type: string
+              pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+              description: Reference to a node domain.
+              example: >-
+                1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+            traceID:
+              type: string
+              description: Internal debugging information. May be an empty string.
+              example: 0b9ac245-2522-4364-9059-efc17907ce54
+    definitions-responses-errors-timeoutError-yaml:
+      description: >-
+        Request's timeout has expired. OR Base definition for HTTP JSON RPC 2.0
+        error responses.
+      title: timeoutError
+      x-json-schema-id: >-
+        definitions/responses/errors/timeoutError.yaml OR
+        definitions/responses/errors/RPCErrorResponse.yaml
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - error
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: integer
+              enum:
+                - -31408
+            message:
+              type: string
+              enum:
+                - Request's timeout has expired.
+    definitions-responses-Status-yaml:
+      title: Success
+      x-json-schema-id: >-
+        definitions/responses/Status.yaml OR
+        definitions/responses/RPCResponse.yaml
+      description: Base definition for HTTP JSON RPC 2.0 responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - networkState
+            - nodeState
+            - additionalNodeState
+            - origin
+            - activeListSize
+            - workingListSize
+            - nodes
+            - pulseNumber
+            - entropy
+            - version
+          properties:
+            networkState:
+              type: string
+              enum:
+                - completeNetworkState
+            nodeState:
+              type: string
+            additionalNodeState:
+              type: string
+            origin:
+              title: Node
+              description: Node description
+              type: object
+              required:
+                - reference
+                - role
+                - isWorking
+              properties:
+                reference:
+                  type: string
+                  pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                role:
+                  title: node Type
+                  type: string
+                  description: Node types
+                  enum:
+                    - heavy_material
+                    - light_material
+                    - virtual
+                  x-json-schema-id: definitions/types/nodeType.yaml
+                isWorking:
+                  type: boolean
+              x-json-schema-id: definitions/nodeShort.yaml
+            activeListSize:
+              type: integer
+            workingListSize:
+              type: integer
+            nodes:
+              type: array
+              minItems: 1
+              items:
+                title: Node
+                description: Node description
+                type: object
+                required:
+                  - reference
+                  - role
+                  - isWorking
+                properties:
+                  reference:
+                    type: string
+                    pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                  role:
+                    title: node Type
+                    type: string
+                    description: Node types
+                    enum:
+                      - heavy_material
+                      - light_material
+                      - virtual
+                    x-json-schema-id: definitions/types/nodeType.yaml
+                  isWorking:
+                    type: boolean
+                x-json-schema-id: definitions/nodeShort.yaml
+            pulseNumber:
+              type: integer
+            entropy:
+              type: string
+            version:
+              type: string
+    definitions-responses-Seed-yaml:
+      title: Success
+      x-json-schema-id: >-
+        definitions/responses/Seed.yaml OR
+        definitions/responses/RPCResponse.yaml
+      description: Base definition for HTTP JSON RPC 2.0 responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - seed
+          properties:
+            seed:
+              type: string
+              description: Base64 string with a random range of bytes.
+              example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+    methods-call-yaml:
+      description: |-
+        Call to a contract's `callSite`, it's internal 'method'.
+         OR Base definition for HTTP JSON RPC 2.0 requests.
+      type: object
+      x-json-schema-id: methods/call.yaml OR definitions/RPCRequest.yaml
+      required:
+        - jsonrpc
+        - method
+        - id
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+          example: '2.0'
+        id:
+          description: Request's ID to link it with the corresponding result.
+          type: string
+          example: 1
+        method:
+          type: string
+          example: getSeed
+          enum:
+            - contract.call
+        params:
+          type: object
+          required:
+            - callSite
+            - reference
+            - seed
+            - publicKey
+          properties:
+            seed:
+              type: string
+              description: 'Seed returned by [getSeed](/#operation/get-seed).'
+              example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+            callSite:
+              type: string
+              description: Call point for the contract's method.
+            callParams:
+              type: object
+            publicKey:
+              type: string
+    definitions-responses-member-yaml:
+      title: Success
+      x-json-schema-id: >-
+        definitions/responses/member.yaml OR definitions/responses/success.yaml
+        OR definitions/responses/RPCResponse.yaml
+      description: >-
+        A successful response. OR Base definition for HTTP JSON RPC 2.0
+        responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - callResult
+            - requestReference
+            - traceID
+          properties:
+            callResult:
+              type: object
+              description: Method's call result.
+              required:
+                - reference
+              properties:
+                reference:
+                  type: string
+                  pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                  description: Reference to the `member` object.
+                  example: >-
+                    1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+            requestReference:
+              type: string
+              description: >-
+                Reference to a request record initialized by the method's call.
+                May be an empty string.
+              example: >-
+                1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+            traceID:
+              type: string
+              description: Internal debugging information. May be an empty string.
+              example: 0b9ac245-2522-4364-9059-efc17907ce54
+    definitions-responses-errors-error-resp-to-signedReq-yaml:
+      title: Errors OR resultError OR timeoutError
+      description: >-
+        Error response to a signed request. Can contain multiple errors with
+        different codes. OR Method error. OR Base definition for HTTP JSON RPC
+        2.0 error responses. OR Request's timeout has expired. OR Base
+        definition for HTTP JSON RPC 2.0 error responses.
+      properties:
+        error:
+          required:
+            - data
+            - code
+            - message
+          properties:
+            data:
+              type: object
+              description: Additional error information.
+              required:
+                - requestReference
+                - traceID
+              properties:
+                requestReference:
+                  type: string
+                  description: >-
+                    Reference to a request record initialized by the method's
+                    call. May be an empty string.
+                  example: >-
+                    1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                traceID:
+                  type: string
+                  description: Internal debugging information. May be an empty string.
+                  example: 0b9ac245-2522-4364-9059-efc17907ce54
+            code:
+              type: integer
+              enum:
+                - -31420
+                - -31408
+            message:
+              type: string
+              enum:
+                - Contract's method has returned an error.
+                - Request's timeout has expired.
+          type: object
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+      x-json-schema-id: >-
+        definitions/responses/errors/error-resp-to-signedReq.yaml OR
+        definitions/responses/errors/resultError.yaml OR
+        definitions/responses/errors/RPCErrorResponse.yaml OR
+        definitions/responses/errors/timeoutError.yaml OR
+        definitions/responses/errors/RPCErrorResponse.yaml
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - error
+    definitions-responses-member-and-migrationAddress-yaml:
+      title: Success
+      x-json-schema-id: >-
+        definitions/responses/member-and-migrationAddress.yaml OR
+        definitions/responses/member.yaml OR definitions/responses/success.yaml
+        OR definitions/responses/RPCResponse.yaml
+      description: >-
+        A successful response. OR Base definition for HTTP JSON RPC 2.0
+        responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - callResult
+            - requestReference
+            - traceID
+          properties:
+            callResult:
+              type: object
+              description: Method's call result.
+              required:
+                - reference
+              properties:
+                reference:
+                  type: string
+                  pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+                  description: Reference to the `member` object.
+                  example: >-
+                    1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+                migrationAddress:
+                  type: string
+                  example: '0xF4e1507486dFE411785B00d7D00A1f1a484f00E6'
+                  description: >-
+                    Address in the Insolar network — transfer destination
+                    (deposit) for Ethereum tokens during the migration period.
+            requestReference:
+              type: string
+              description: >-
+                Reference to a request record initialized by the method's call.
+                May be an empty string.
+              example: >-
+                1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+            traceID:
+              type: string
+              description: Internal debugging information. May be an empty string.
+              example: 0b9ac245-2522-4364-9059-efc17907ce54
+    definitions-responses-transfer-yaml:
+      title: Success
+      x-json-schema-id: >-
+        definitions/responses/transfer.yaml OR
+        definitions/responses/success.yaml OR
+        definitions/responses/RPCResponse.yaml
+      description: >-
+        A successful response. OR Base definition for HTTP JSON RPC 2.0
+        responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - callResult
+            - requestReference
+            - traceID
+          properties:
+            callResult:
+              type: object
+              description: Method's call result.
+              required:
+                - fee
+              properties:
+                fee:
+                  type: string
+                  example: '10'
+                  description: >-
+                    Factual transfer's fee value according to the current
+                    tariff.
+            requestReference:
+              type: string
+              description: >-
+                Reference to a request record initialized by the method's call.
+                May be an empty string.
+              example: >-
+                1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+            traceID:
+              type: string
+              description: Internal debugging information. May be an empty string.
+              example: 0b9ac245-2522-4364-9059-efc17907ce54
+    definitions-responses-success-yaml:
+      title: Success
+      description: >-
+        A successful response. OR Base definition for HTTP JSON RPC 2.0
+        responses.
+      x-json-schema-id: >-
+        definitions/responses/success.yaml OR
+        definitions/responses/RPCResponse.yaml
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+          required:
+            - callResult
+            - requestReference
+            - traceID
+          properties:
+            callResult:
+              type: object
+              description: Method's call result.
+            requestReference:
+              type: string
+              description: >-
+                Reference to a request record initialized by the method's call.
+                May be an empty string.
+              example: >-
+                1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+            traceID:
+              type: string
+              description: Internal debugging information. May be an empty string.
+              example: 0b9ac245-2522-4364-9059-efc17907ce54
+    definitions-responses-RPCResponse-yaml:
+      description: Base definition for HTTP JSON RPC 2.0 responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - result
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        result:
+          type: object
+      x-json-schema-id: definitions/responses/RPCResponse.yaml
+    definitions-responses-errors-RPCErrorResponse-yaml:
+      description: Base definition for HTTP JSON RPC 2.0 error responses.
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - error
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: integer
+            message:
+              type: string
+      x-json-schema-id: definitions/responses/errors/RPCErrorResponse.yaml
+    definitions-nodeShort-yaml:
+      title: Node
+      description: Node description
+      type: object
+      required:
+        - reference
+        - role
+        - isWorking
+      properties:
+        reference:
+          type: string
+          pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+        role:
+          title: node Type
+          type: string
+          description: Node types
+          enum:
+            - heavy_material
+            - light_material
+            - virtual
+          x-json-schema-id: definitions/types/nodeType.yaml
+        isWorking:
+          type: boolean
+      x-json-schema-id: definitions/nodeShort.yaml
+    definitions-responses-errors-resultError-yaml:
+      description: Method error. OR Base definition for HTTP JSON RPC 2.0 error responses.
+      title: resultError
+      x-json-schema-id: >-
+        definitions/responses/errors/resultError.yaml OR
+        definitions/responses/errors/RPCErrorResponse.yaml
+      type: object
+      required:
+        - jsonrpc
+        - id
+        - error
+      properties:
+        jsonrpc:
+          type: string
+          enum:
+            - '2.0'
+        id:
+          description: ID passed by the request.
+          example: 1
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: integer
+              enum:
+                - -31420
+            message:
+              type: string
+              enum:
+                - Contract's method has returned an error.
+            data:
+              properties:
+                requestReference:
+                  example: >-
+                    1tJCaZ7rFeUncXXcYoKFTMza6xypkF8BGGXh48X2Fy.11111111111111111111111111111111
+                traceID:
+                  example: 0b9ac245-2522-4364-9059-efc17907ce54
+    definitions-types-nodeType-yaml:
+      title: node Type
+      type: string
+      description: Node types
+      enum:
+        - heavy_material
+        - light_material
+        - virtual
+      x-json-schema-id: definitions/types/nodeType.yaml
+    MemberCreateRequestParams:
+      type: object
+      required:
+        - seed
+        - callSite
+        - callParams
+        - publicKey
+      properties:
+        seed:
+          type: string
+          description: 'Seed returned by [getSeed](/#operation/get-seed).'
+          example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+        callSite:
+          type: string
+          description: Call point for the contract's method.
+          enum:
+            - member.create
+        callParams:
+          type: object
+          description: >-
+            Parameters of the contract's internal method. May be
+            omitted as the method does not require any.
+        publicKey:
+          type: string
+          description: >
+            Public key to associate with the new `member` object.
+            Used to check the `<signatureString>` created by the
+            paired secret key. Format: a [PEM
+            key](https://tools.ietf.org/html/rfc1421) in a Base64
+            string.
+          x-dredd-source:
+            hookMethod: newMemberKey
+    MemberGetRequestParams:
+      type: object
+      required:
+        - callSite
+        - reference
+        - seed
+        - publicKey
+      properties:
+        seed:
+          type: string
+          description: 'Seed returned by [getSeed](/#operation/get-seed).'
+          example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+        callSite:
+          type: string
+          description: Call point for the contract's method.
+          enum:
+            - member.get
+        callParams:
+          type: object
+          description: >-
+            Parameters of the contract's internal method. May be
+            omitted as the method does not require any.
+        publicKey:
+          type: string
+          description: >
+            Public key of your `member` object. Used to check the
+            `<signatureString>` created by the paired secret key.
+            Format: a [PEM key](https://tools.ietf.org/html/rfc1421)
+            in a Base64 string.
+    MemberMigrationCreateRequestParams:
+      type: object
+      required:
+        - callSite
+        - reference
+        - seed
+        - publicKey
+      properties:
+        seed:
+          type: string
+          description: 'Seed returned by [getSeed](/#operation/get-seed).'
+          example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+        callSite:
+          type: string
+          description: Call point for the contract's method.
+          enum:
+            - member.migrationCreate
+        callParams:
+          type: object
+          description: >-
+            Parameters of the contract's internal method. May be
+            omitted as the method does not require any.
+        publicKey:
+          type: string
+          description: >
+            Public key to associate with the new `member` object.
+            Used to check the `<signatureString>` created by the
+            paired secret key. Format: a [PEM
+            key](https://tools.ietf.org/html/rfc1421) in a Base64
+            string.
+    MemberTransferRequestParams:
+      type: object
+      required:
+        - callSite
+        - reference
+        - seed
+        - publicKey
+        - callParams
+      properties:
+        seed:
+          type: string
+          description: 'Seed returned by [getSeed](/#operation/get-seed).'
+          example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+        callSite:
+          type: string
+          description: Call point for the contract's method.
+          enum:
+            - member.transfer
+        callParams:
+          type: object
+          description: Parameters of the contract's internal method.
+          required:
+            - amount
+            - toMemberReference
+          properties:
+            amount:
+              type: string
+              description: Amount of coins to transfer.
+              example: '1000'
+            toMemberReference:
+              description: Reference to the recipient's `member` object.
+              example: >-
+                6bbCFVhhVbVUSUKPEJNqJscLJ7X4kNMDfd83qvprZ5A.11111111111111111111111111111111
+              type: string
+              pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+        publicKey:
+          type: string
+          description: >
+            Public key of your `member` object. Used to check the
+            `<signatureString>` created by the paired secret key.
+            Format: a [PEM key](https://tools.ietf.org/html/rfc1421)
+            in a Base64 string.
+          example: >-
+            -----BEGIN PUBLIC KEY-----
+
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMSbA4KvO/jlwY+8WFDEdwhCLlsEC
+
+            F3/GYvu9iTWHwCctx1wTbGGjNLY03EjXyYxaf8coNbSbZeu+jXcWeMHG0A==
+
+            -----END PUBLIC KEY-----
+        reference:
+          description: >-
+            Reference to your `member` object. Used for
+            identification.
+          example: >-
+            1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+          type: string
+          pattern: '^[A-z0-9]+\.[A-z0-9]+$'
+    DepositTransferRequestParams:
+      type: object
+      required:
+        - callSite
+        - reference
+        - seed
+        - publicKey
+        - callParams
+      properties:
+        seed:
+          type: string
+          description: 'Seed returned by [getSeed](/#operation/get-seed).'
+          example: U1wGm8xl+WUFIPFLdFupTXKMXbLoJbv0nA/ImZAtHZk=
+        callSite:
+          type: string
+          description: Call point for the contract's method.
+          enum:
+            - deposit.transfer
+        callParams:
+          type: object
+          description: Parameters of the contract's internal method.
+          required:
+            - amount
+            - ethTxHash
+          properties:
+            amount:
+              type: string
+              description: Amount of coins to transfer.
+              example: '1000'
+            ethTxHash:
+              type: string
+              description: >-
+                Ethereum transaction's hash. Used for deposit
+                identification.
+              example: >-
+                0xd1844c003fc2531625538800e2f7834b4913be73f34765472ad6fb547d0ce2df
+        publicKey:
+          type: string
+          description: >
+            Public key of your `member` object. Used to check the
+            `<signatureString>` created by the paired secret key.
+            Format: a [PEM key](https://tools.ietf.org/html/rfc1421)
+            in a Base64 string.
+          example: >-
+            -----BEGIN PUBLIC KEY-----
+
+            MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMSbA4KvO/jlwY+8WFDEdwhCLlsEC
+
+            F3/GYvu9iTWHwCctx1wTbGGjNLY03EjXyYxaf8coNbSbZeu+jXcWeMHG0A==
+
+              -----END PUBLIC KEY-----
+        reference:
+          description: >-
+            Reference to your `member` object. Used for
+            identification.
+          example: >-
+            1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA.1tJCbWvMpRjVGSMe2ApfLFKFP42pYRX7PvHrs1VCAA
+          type: string
+          pattern: '^[A-z0-9]+\.[A-z0-9]+$'
