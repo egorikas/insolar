@@ -1,4 +1,4 @@
-package apiclient
+package apiclientdeprecated
 
 // Declare structures to unmarshal the responses into in accordance with the specification.
 // The Platform uses the basic JSON RPC 2.0 response structure:

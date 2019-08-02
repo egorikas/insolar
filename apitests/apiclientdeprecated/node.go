@@ -1,4 +1,4 @@
-package apiclient
+package apiclientdeprecated
 
 import (
 	"encoding/json"

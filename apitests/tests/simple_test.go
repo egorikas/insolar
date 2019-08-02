@@ -1,7 +1,7 @@
 package tests
 
 import (
-	"github.com/insolar/insolar/apitests/apiclient"
+	"github.com/insolar/insolar/apitests/apiclientdeprecated"
 	"github.com/insolar/insolar/apitests/introspection"
 	"log"
 	"os"
@@ -22,9 +22,9 @@ var Logger *log.Logger
 func TestCreateTransferGetBalance(t *testing.T) {
 	Logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 
-	rootMember := apiclient.GetRootMember()
-	member1 := apiclient.GetNewMember(rootMember)
-	member2 := apiclient.GetNewMember(rootMember)
+	rootMember := apiclientdeprecated.GetRootMember()
+	member1 := apiclientdeprecated.GetNewMember(rootMember)
+	member2 := apiclientdeprecated.GetNewMember(rootMember)
 
 	count := 5
 	Wg.Add(count * 2)
@@ -37,7 +37,7 @@ func TestCreateTransferGetBalance(t *testing.T) {
 	Logger.Println("finished")
 }
 
-func transfer(memberFrom apiclient.MemberObject, memberTo apiclient.MemberObject) {
+func transfer(memberFrom apiclientdeprecated.MemberObject, memberTo apiclientdeprecated.MemberObject) {
 	defer Wg.Done()
 	result := memberFrom.TransferMoney(memberTo, "100")
 	Logger.Printf("Transfer from: %v to %v",
@@ -65,9 +65,9 @@ func TestJetSplit(t *testing.T) {
 		}
 	}
 
-	var nodeStatus1 apiclient.NodeStatus
-	nodeStatus1 = apiclient.GetNodeStatus("http://localhost:19103/api/")
-	nodeStatus1 = apiclient.GetNodeStatus("http://localhost:19105/api/")
+	var nodeStatus1 apiclientdeprecated.NodeStatus
+	nodeStatus1 = apiclientdeprecated.GetNodeStatus("http://localhost:19103/api/")
+	nodeStatus1 = apiclientdeprecated.GetNodeStatus("http://localhost:19105/api/")
 	fmt.Println(nodeStatus1.Result.PulseNumber)
 	fmt.Printf("%s%d%s", "Jets Count: ", jetCount, "\n")
 }
