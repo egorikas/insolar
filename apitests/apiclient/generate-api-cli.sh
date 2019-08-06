@@ -5,8 +5,8 @@ set -x
 WORKDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 SRC_DIR=~/go/src/github.com/insolar
 SPEC_BASE_DIR=${WORKDIR}
-#REPOS=( "insolar-observer-api" "insolar-internal-api" "insolar-api" )
-REPOS=( "insolar-api" )
+REPOS=( "insolar-observer-api" "insolar-internal-api" "insolar-api" )
+#REPOS=( "insolarapitests" )
 
 for repo_name in "${REPOS[@]}"
 do
@@ -20,13 +20,14 @@ do
 	npm install
   npm run export -- --collapse
 
-  output_dir=${SPEC_BASE_DIR}/${repo_name}/apiclient
+  package=$(echo ${repo_name} | tr '-' '_')
+  output_dir=${SPEC_BASE_DIR}/${package}
   rm -rf ${output_dir}
   openapi-generator generate \
       --input-spec api-exported.yaml \
       --generator-name go \
       --output ${output_dir} \
-      --package-name apiclient \
+      --package-name ${package} \
       --skip-validate-spec
 
   cp ${repo_dir}/api-exported.yaml ${WORKDIR}/

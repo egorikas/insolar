@@ -8,7 +8,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/insolar/insolar/apitests/apiclient/insolar-api/apiclient"
+	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
+
 	"log"
 	"os"
 )
@@ -19,21 +20,27 @@ const (
 	url            = "http://localhost:19101"
 	JSONRPCVersion = "2.0"
 	APICALL        = "api.call"
-	GETSEED        = "node.getSeed"
-	GETINFO        = "network.getInfo"
-	MEMBERCREATE   = "member.create"
+	//information_api
+	GETSEED   = "node.getSeed"
+	GETINFO   = "network.getInfo"
+	GETSTATUS = "node.getStatus"
+	//member_api
+	MEMBERCREATE = "member.create"
+	//migration_api
+	MEMBERMIGRATIONCREATE = "member.migrationCreate"
 )
 
 var logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 var informationApi = getClient().InformationApi
 var memberApi = getClient().MemberApi
+var migrationApi = getClient().MigrationApi
 
-func getClient() *apiclient.APIClient {
-	c := apiclient.Configuration{
+func getClient() *insolar_api.APIClient {
+	c := insolar_api.Configuration{
 		BasePath: "http://localhost:19101",
 		//Host:     "",
 	}
-	return apiclient.NewAPIClient(&c)
+	return insolar_api.NewAPIClient(&c)
 }
 
 func getRequestId() int32 {
@@ -42,7 +49,7 @@ func getRequestId() int32 {
 }
 
 func GetSeed() string {
-	r := apiclient.NodeGetSeedRequest{
+	r := insolar_api.NodeGetSeedRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      getRequestId(),
 		Method:  GETSEED,
@@ -56,14 +63,29 @@ func GetSeed() string {
 	return s
 }
 
-func GetInfo() apiclient.NetworkGetInfoResponseResult {
-	infoBody := apiclient.NetworkGetInfoRequest{
+func GetInfo() insolar_api.NetworkGetInfoResponseResult {
+	infoBody := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      getRequestId(),
 		Method:  GETINFO,
 		Params:  nil,
 	}
 	response, _, err := informationApi.GetInfo(nil, infoBody)
+	if err != nil {
+		logger.Fatalln(err)
+	}
+	//logger.Println("Get seed result: " )
+	return response.Result
+}
+
+func GetStatus() insolar_api.NodeGetStatusResponseResult {
+	infoBody := insolar_api.NodeGetStatusRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      getRequestId(),
+		Method:  GETSTATUS,
+		Params:  nil,
+	}
+	response, _, err := informationApi.GetStatus(nil, infoBody)
 	if err != nil {
 		logger.Fatalln(err)
 	}
@@ -79,11 +101,11 @@ func CreateMember() MemberObject {
 	ms, _ := NewMemberSignature()
 	seed := GetSeed()
 
-	request := apiclient.MemberCreateRequest{
+	request := insolar_api.MemberCreateRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      1,
 		Method:  APICALL,
-		Params: apiclient.MemberCreateRequestParams{
+		Params: insolar_api.MemberCreateRequestParams{
 			Seed:       seed,
 			CallSite:   MEMBERCREATE,
 			CallParams: nil,
@@ -102,6 +124,56 @@ func CreateMember() MemberObject {
 	return MemberObject{
 		Signature:            ms,
 		MemberResponseResult: response,
+	}
+}
+
+func MemberMigrationCreate() MemberObject {
+	var err error
+	ms, _ := NewMemberSignature()
+	seed := GetSeed()
+
+	request := insolar_api.MemberMigrationCreateRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      1,
+		Method:  APICALL,
+		Params: insolar_api.MemberMigrationCreateRequestParams{
+			Seed:       seed,
+			CallSite:   MEMBERMIGRATIONCREATE,
+			CallParams: nil,
+			PublicKey:  string(ms.PemPublicKey),
+		},
+	}
+	//json.Marshal(request)
+
+	var headers = SignRequestHeaders(request, ms.PrivateKey)
+	response, _, err := migrationApi.MemberMigrationCreate(nil, headers.Digest, headers.Signature, request)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	// Put your reference into a variable to form a transfer request next:
+	//memberReference := member.Result.CallResult.Reference
+
+	return MemberObject{
+		Signature: ms,
+		MemberResponseResult: insolar_api.MemberCreateResponse{
+			Jsonrpc: response.Jsonrpc,
+			Id:      response.Id,
+			Result: insolar_api.MemberCreateResponseResult{
+				CallResult: insolar_api.MemberCreateResponseResultCallResult{
+					Reference: response.Result.CallResult.Reference,
+				},
+				RequestReference: response.Result.RequestReference,
+				TraceID:          response.Result.TraceID,
+			},
+			Error: insolar_api.MemberCreateResponseError{
+				Data: insolar_api.MemberCreateResponseErrorData{
+					RequestReference: response.Error.Data.RequestReference,
+					TraceID:          response.Error.Data.TraceID,
+				},
+				Code:    response.Error.Code,
+				Message: response.Error.Message,
+			},
+		},
 	}
 }
 
