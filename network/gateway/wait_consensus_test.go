@@ -76,7 +76,7 @@ func TestWaitConsensus_ConsensusNotHappenedInETA(t *testing.T) {
 func TestWaitConsensus_ConsensusHappenedInETA(t *testing.T) {
 	gatewayer := mock.NewGatewayerMock(t)
 	gatewayer.SwitchStateMock.Set(func(ctx context.Context, state insolar.NetworkState) {
-		assert.Equal(t, insolar.WaitMinRoles, state)
+		assert.Equal(t, insolar.WaitMajority, state)
 	})
 
 	waitConsensus := newWaitConsensus(&Base{})

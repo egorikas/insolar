@@ -80,7 +80,6 @@ func (g *WaitMinRoles) GetState() insolar.NetworkState {
 }
 
 func (g *WaitMinRoles) OnConsensusFinished(ctx context.Context, report network.Report) {
-	inslogger.FromContext(ctx).Infof("--- Check minroles for pulse %d", report.PulseNumber)
 	g.checkMinRoles(ctx, report.PulseNumber)
 }
 
