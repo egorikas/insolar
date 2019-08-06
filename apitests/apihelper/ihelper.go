@@ -13,7 +13,7 @@ import (
 	"os"
 )
 
-var id int = 0
+var id int32 = 0
 
 const (
 	url            = "http://localhost:19101"
@@ -36,9 +36,9 @@ func getClient() *apiclient.APIClient {
 	return apiclient.NewAPIClient(&c)
 }
 
-func getRequestId() string {
+func getRequestId() int32 {
 	id++
-	return fmt.Sprintf("id%d", id)
+	return id
 }
 
 func GetSeed() string {
@@ -51,7 +51,9 @@ func GetSeed() string {
 	if err != nil {
 		logger.Fatalln(err)
 	}
-	return response.Result.Seed
+	s := response.Result.Seed
+	logger.Println("Get seed result: " + s)
+	return s
 }
 
 func GetInfo() apiclient.NetworkGetInfoResponseResult {
@@ -76,11 +78,10 @@ func CreateMember() MemberObject {
 	var err error
 	ms, _ := NewMemberSignature()
 	seed := GetSeed()
-	logger.Println("Get seed result: " + seed)
 
 	request := apiclient.MemberCreateRequest{
 		Jsonrpc: JSONRPCVersion,
-		Id:      getRequestId(),
+		Id:      1,
 		Method:  APICALL,
 		Params: apiclient.MemberCreateRequestParams{
 			Seed:       seed,

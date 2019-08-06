@@ -20,10 +20,12 @@ do
 	npm install
   npm run export -- --collapse
 
+  output_dir=${SPEC_BASE_DIR}/${repo_name}/apiclient
+  rm -rf ${output_dir}
   openapi-generator generate \
       --input-spec api-exported.yaml \
       --generator-name go \
-      --output ${SPEC_BASE_DIR}/${repo_name}/apiclient \
+      --output ${output_dir} \
       --package-name apiclient \
       --skip-validate-spec
 

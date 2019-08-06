@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"fmt"
 	"github.com/insolar/insolar/apitests/apihelper"
+	"github.com/stretchr/testify/require"
 	"log"
 	"testing"
 )
@@ -9,7 +11,9 @@ import (
 var logger *log.Logger
 
 func TestGetSeed(t *testing.T) {
-	apihelper.GetSeed()
+	seed := apihelper.GetSeed()
+	fmt.Printf(seed)
+	require.NotEmpty(t, seed)
 }
 
 func TestCreateMember(t *testing.T) {
