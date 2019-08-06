@@ -18,10 +18,8 @@ package logicrunner
 
 import (
 	"context"
-	"sync"
 
 	"github.com/pkg/errors"
-	uuid "github.com/satori/go.uuid"
 
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/insolar/message"
@@ -30,23 +28,25 @@ import (
 	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/instrumentation/instracer"
 	"github.com/insolar/insolar/logicrunner/artifacts"
+	"github.com/insolar/insolar/logicrunner/common"
 	"github.com/insolar/insolar/logicrunner/goplugin/rpctypes"
+	"github.com/insolar/insolar/logicrunner/logicexecutor"
+	"github.com/insolar/insolar/logicrunner/outgoingsender"
+	"github.com/insolar/insolar/logicrunner/statestorage"
+	"github.com/insolar/insolar/logicrunner/transcript"
 )
 
-//go:generate minimock -i github.com/insolar/insolar/logicrunner.ProxyImplementation -o ./ -s _mock.go
+//go:generate minimock -i github.com/insolar/insolar/logicrunner.ProxyImplementation -o ./ -s _mock.go -g
 
 type ProxyImplementation interface {
-	GetCode(context.Context, *Transcript, rpctypes.UpGetCodeReq, *rpctypes.UpGetCodeResp) error
-	RouteCall(context.Context, *Transcript, rpctypes.UpRouteReq, *rpctypes.UpRouteResp) error
-	SaveAsChild(context.Context, *Transcript, rpctypes.UpSaveAsChildReq, *rpctypes.UpSaveAsChildResp) error
-	SaveAsDelegate(context.Context, *Transcript, rpctypes.UpSaveAsDelegateReq, *rpctypes.UpSaveAsDelegateResp) error
-	GetObjChildrenIterator(context.Context, *Transcript, rpctypes.UpGetObjChildrenIteratorReq, *rpctypes.UpGetObjChildrenIteratorResp) error
-	GetDelegate(context.Context, *Transcript, rpctypes.UpGetDelegateReq, *rpctypes.UpGetDelegateResp) error
-	DeactivateObject(context.Context, *Transcript, rpctypes.UpDeactivateObjectReq, *rpctypes.UpDeactivateObjectResp) error
+	GetCode(context.Context, *transcript.Transcript, rpctypes.UpGetCodeReq, *rpctypes.UpGetCodeResp) error
+	RouteCall(context.Context, *transcript.Transcript, rpctypes.UpRouteReq, *rpctypes.UpRouteResp) error
+	SaveAsChild(context.Context, *transcript.Transcript, rpctypes.UpSaveAsChildReq, *rpctypes.UpSaveAsChildResp) error
+	DeactivateObject(context.Context, *transcript.Transcript, rpctypes.UpDeactivateObjectReq, *rpctypes.UpDeactivateObjectResp) error
 }
 
 type RPCMethods struct {
-	ss         StateStorage
+	ss         statestorage.StateStorage
 	execution  ProxyImplementation
 	validation ProxyImplementation
 }
@@ -55,11 +55,12 @@ func NewRPCMethods(
 	am artifacts.Client,
 	dc artifacts.DescriptorsCache,
 	cr insolar.ContractRequester,
-	ss StateStorage,
+	ss statestorage.StateStorage,
+	outgoingSender outgoingsender.OutgoingRequestSender,
 ) *RPCMethods {
 	return &RPCMethods{
 		ss:         ss,
-		execution:  NewExecutionProxyImplementation(dc, cr, am),
+		execution:  NewExecutionProxyImplementation(dc, cr, am, outgoingSender),
 		validation: NewValidationProxyImplementation(dc),
 	}
 }
@@ -67,18 +68,18 @@ func NewRPCMethods(
 func (m *RPCMethods) getCurrent(
 	obj insolar.Reference, mode insolar.CallMode, reqRef insolar.Reference,
 ) (
-	ProxyImplementation, *Transcript, error,
+	ProxyImplementation, *transcript.Transcript, error,
 ) {
 	switch mode {
 	case insolar.ExecuteCallMode:
-		broker := m.ss.GetExecutionState(obj)
-		if broker == nil {
-			return nil, nil, errors.New("No execution in the state")
+		archive := m.ss.GetExecutionArchive(obj)
+		if archive == nil {
+			return nil, nil, errors.New("No execution archive in the state")
 		}
 
-		transcript := broker.GetActiveTranscript(reqRef)
+		transcript := archive.GetActiveTranscript(reqRef)
 		if transcript == nil {
-			return nil, nil, errors.Errorf("No current execution in the state for request %s", reqRef.String())
+			return nil, nil, errors.New("No execution archive in the state")
 		}
 
 		return m.execution, transcript, nil
@@ -117,38 +118,6 @@ func (m *RPCMethods) SaveAsChild(req rpctypes.UpSaveAsChildReq, rep *rpctypes.Up
 	return impl.SaveAsChild(current.Context, current, req, rep)
 }
 
-// SaveAsDelegate is an RPC saving data as memory of a contract as child a parent
-func (m *RPCMethods) SaveAsDelegate(req rpctypes.UpSaveAsDelegateReq, rep *rpctypes.UpSaveAsDelegateResp) error {
-	impl, current, err := m.getCurrent(req.Callee, req.Mode, req.Request)
-	if err != nil {
-		return errors.Wrap(err, "Failed to fetch current execution")
-	}
-	return impl.SaveAsDelegate(current.Context, current, req, rep)
-}
-
-// GetObjChildrenIterator is an RPC returns an iterator over object children with specified prototype
-func (m *RPCMethods) GetObjChildrenIterator(
-	req rpctypes.UpGetObjChildrenIteratorReq,
-	rep *rpctypes.UpGetObjChildrenIteratorResp,
-) error {
-	impl, current, err := m.getCurrent(req.Callee, req.Mode, req.Request)
-	if err != nil {
-		return errors.Wrap(err, "Failed to fetch current execution")
-	}
-
-	return impl.GetObjChildrenIterator(current.Context, current, req, rep)
-}
-
-// GetDelegate is an RPC saving data as memory of a contract as child a parent
-func (m *RPCMethods) GetDelegate(req rpctypes.UpGetDelegateReq, rep *rpctypes.UpGetDelegateResp) error {
-	impl, current, err := m.getCurrent(req.Callee, req.Mode, req.Request)
-	if err != nil {
-		return errors.Wrap(err, "Failed to fetch current execution")
-	}
-
-	return impl.GetDelegate(current.Context, current, req, rep)
-}
-
 // DeactivateObject is an RPC saving data as memory of a contract as child a parent
 func (m *RPCMethods) DeactivateObject(req rpctypes.UpDeactivateObjectReq, rep *rpctypes.UpDeactivateObjectResp) error {
 	impl, current, err := m.getCurrent(req.Callee, req.Mode, req.Request)
@@ -160,25 +129,28 @@ func (m *RPCMethods) DeactivateObject(req rpctypes.UpDeactivateObjectReq, rep *r
 }
 
 type executionProxyImplementation struct {
-	dc artifacts.DescriptorsCache
-	cr insolar.ContractRequester
-	am artifacts.Client
+	dc             artifacts.DescriptorsCache
+	cr             insolar.ContractRequester
+	am             artifacts.Client
+	outgoingSender outgoingsender.OutgoingRequestSender
 }
 
 func NewExecutionProxyImplementation(
 	dc artifacts.DescriptorsCache,
 	cr insolar.ContractRequester,
 	am artifacts.Client,
+	outgoingSender outgoingsender.OutgoingRequestSender,
 ) ProxyImplementation {
 	return &executionProxyImplementation{
-		dc: dc,
-		cr: cr,
-		am: am,
+		dc:             dc,
+		cr:             cr,
+		am:             am,
+		outgoingSender: outgoingSender,
 	}
 }
 
 func (m *executionProxyImplementation) GetCode(
-	ctx context.Context, current *Transcript, req rpctypes.UpGetCodeReq, reply *rpctypes.UpGetCodeResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpGetCodeReq, reply *rpctypes.UpGetCodeResp,
 ) error {
 	ctx, span := instracer.StartSpan(ctx, "service.GetCode")
 	defer span.End()
@@ -195,7 +167,7 @@ func (m *executionProxyImplementation) GetCode(
 }
 
 func (m *executionProxyImplementation) RouteCall(
-	ctx context.Context, current *Transcript, req rpctypes.UpRouteReq, rep *rpctypes.UpRouteResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpRouteReq, rep *rpctypes.UpRouteResp,
 ) error {
 	inslogger.FromContext(ctx).Debug("RPC.RouteCall")
 
@@ -203,7 +175,7 @@ func (m *executionProxyImplementation) RouteCall(
 		return errors.New("Try to call route from immutable method")
 	}
 
-	incoming, outgoing := buildIncomingAndOutgoingCallRequests(ctx, current, req)
+	outgoing := common.BuildOutgoingRequest(ctx, current, req)
 
 	// Step 1. Register outgoing request.
 
@@ -222,32 +194,27 @@ func (m *executionProxyImplementation) RouteCall(
 		return nil
 	}
 
-	// Step 2. Actually make a call.
-	callMsg := &message.CallMethod{IncomingRequest: *incoming}
-	res, err := m.cr.CallMethod(ctx, callMsg)
-	if err == nil && req.Wait {
-		rep.Result = res.(*reply.CallMethod).Result
-	}
-	current.AddOutgoingRequest(ctx, *incoming, rep.Result, nil, err)
-	if err != nil {
-		return err
-	}
+	// Step 2. Send the request and register the result (both is done by outgoingSender)
 
-	// Step 3. Register result of the outgoing method
 	outgoingReqRef := insolar.NewReference(*outgoingReqID)
-	reqResult := newRequestResult(rep.Result, req.Callee)
-	return m.am.RegisterResult(ctx, *outgoingReqRef, reqResult)
+
+	var incoming *record.IncomingRequest
+	rep.Result, incoming, err = m.outgoingSender.SendOutgoingRequest(ctx, *outgoingReqRef, outgoing)
+	if incoming != nil {
+		current.AddOutgoingRequest(ctx, *incoming, rep.Result, nil, err)
+	}
+	return err
 }
 
 // SaveAsChild is an RPC saving data as memory of a contract as child a parent
 func (m *executionProxyImplementation) SaveAsChild(
-	ctx context.Context, current *Transcript, req rpctypes.UpSaveAsChildReq, rep *rpctypes.UpSaveAsChildResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpSaveAsChildReq, rep *rpctypes.UpSaveAsChildResp,
 ) error {
 	inslogger.FromContext(ctx).Debug("RPC.SaveAsChild")
 	ctx, span := instracer.StartSpan(ctx, "RPC.SaveAsChild")
 	defer span.End()
 
-	incoming, outgoing := buildIncomingAndOutgoingSaveAsChildRequests(ctx, current, req)
+	incoming, outgoing := common.BuildIncomingAndOutgoingSaveAsChildRequests(ctx, current, req)
 
 	// Register outgoing request
 	outgoingReqID, err := m.am.RegisterOutgoingRequest(ctx, outgoing)
@@ -257,142 +224,25 @@ func (m *executionProxyImplementation) SaveAsChild(
 
 	// Send the request
 	msg := &message.CallMethod{IncomingRequest: *incoming}
-	ref, err := m.cr.CallConstructor(ctx, msg)
-	current.AddOutgoingRequest(ctx, *incoming, nil, ref, err)
+	res, err := m.cr.Call(ctx, msg)
 	if err != nil {
 		return err
 	}
-	rep.Reference = ref
+
+	callReply := res.(*reply.CallMethod)
+	current.AddOutgoingRequest(ctx, *incoming, callReply.Result, callReply.Object, err)
+
+	rep.Reference = callReply.Object
+	rep.Result = callReply.Result
 
 	// Register result of the outgoing method
 	outgoingReqRef := insolar.NewReference(*outgoingReqID)
-	reqResult := newRequestResult(rep.Reference.Bytes(), req.Callee)
+	reqResult := logicexecutor.NewRequestResult(rep.Result, req.Callee)
 	return m.am.RegisterResult(ctx, *outgoingReqRef, reqResult)
-}
-
-// SaveAsDelegate is an RPC saving data as memory of a contract as child a parent
-func (m *executionProxyImplementation) SaveAsDelegate(
-	ctx context.Context, current *Transcript, req rpctypes.UpSaveAsDelegateReq, rep *rpctypes.UpSaveAsDelegateResp,
-) error {
-	inslogger.FromContext(ctx).Debug("RPC.SaveAsDelegate")
-	ctx, span := instracer.StartSpan(ctx, "RPC.SaveAsDelegate")
-	defer span.End()
-
-	// Send the request
-	incoming, outgoing := buildIncomingAndOutgoingSaveAsDelegateRequests(ctx, current, req)
-
-	// Register outgoing request
-	outgoingReqID, err := m.am.RegisterOutgoingRequest(ctx, outgoing)
-	if err != nil {
-		return err
-	}
-
-	msg := &message.CallMethod{IncomingRequest: *incoming}
-	ref, err := m.cr.CallConstructor(ctx, msg)
-	if err != nil {
-		return err
-	}
-	current.AddOutgoingRequest(ctx, *incoming, nil, ref, err)
-	rep.Reference = ref
-
-	// Register result of the outgoing method
-	outgoingReqRef := insolar.NewReference(*outgoingReqID)
-	reqResult := newRequestResult(rep.Reference.Bytes(), req.Callee)
-	return m.am.RegisterResult(ctx, *outgoingReqRef, reqResult)
-}
-
-var iteratorBuffSize = 1000
-var iteratorMap = make(map[string]artifacts.RefIterator)
-var iteratorMapLock = sync.RWMutex{}
-
-// GetObjChildrenIterator is an RPC returns an iterator over object children with specified prototype
-func (m *executionProxyImplementation) GetObjChildrenIterator(
-	ctx context.Context, current *Transcript,
-	req rpctypes.UpGetObjChildrenIteratorReq,
-	rep *rpctypes.UpGetObjChildrenIteratorResp,
-) error {
-	ctx, span := instracer.StartSpan(ctx, "RPC.GetObjChildrenIterator")
-	defer span.End()
-
-	iteratorID := req.IteratorID
-
-	iteratorMapLock.RLock()
-	iterator, ok := iteratorMap[iteratorID]
-	iteratorMapLock.RUnlock()
-
-	if !ok {
-		newIterator, err := m.am.GetChildren(ctx, req.Object, nil)
-		if err != nil {
-			return errors.Wrap(err, "[ GetObjChildrenIterator ] Can't get children")
-		}
-
-		id, err := uuid.NewV4()
-		if err != nil {
-			return errors.Wrap(err, "[ GetObjChildrenIterator ] Can't generate UUID")
-		}
-
-		iteratorID = id.String()
-
-		iteratorMapLock.Lock()
-		iterator, ok = iteratorMap[iteratorID]
-		if !ok {
-			iteratorMap[iteratorID] = newIterator
-			iterator = newIterator
-		}
-		iteratorMapLock.Unlock()
-	}
-
-	iter := iterator
-
-	rep.Iterator.ID = iteratorID
-	rep.Iterator.CanFetch = iter.HasNext()
-	for len(rep.Iterator.Buff) < iteratorBuffSize && iter.HasNext() {
-		r, err := iter.Next()
-		if err != nil {
-			return errors.Wrap(err, "[ GetObjChildrenIterator ] Can't get Next")
-		}
-		rep.Iterator.CanFetch = iter.HasNext()
-
-		o, err := m.am.GetObject(ctx, *r)
-
-		if err != nil {
-			if err == insolar.ErrDeactivated {
-				continue
-			}
-			return errors.Wrap(err, "[ GetObjChildrenIterator ] Can't call GetObject on Next")
-		}
-		protoRef, err := o.Prototype()
-		if err != nil {
-			return errors.Wrap(err, "[ GetObjChildrenIterator ] Can't get prototype reference")
-		}
-
-		if protoRef.Equal(req.Prototype) {
-			rep.Iterator.Buff = append(rep.Iterator.Buff, *r)
-		}
-	}
-
-	if !iter.HasNext() {
-		iteratorMapLock.Lock()
-		delete(iteratorMap, rep.Iterator.ID)
-		iteratorMapLock.Unlock()
-	}
-
-	return nil
-}
-
-func (m *executionProxyImplementation) GetDelegate(
-	ctx context.Context, current *Transcript, req rpctypes.UpGetDelegateReq, rep *rpctypes.UpGetDelegateResp,
-) error {
-	ref, err := m.am.GetDelegate(ctx, req.Object, req.OfType)
-	if err != nil {
-		return err
-	}
-	rep.Object = *ref
-	return nil
 }
 
 func (m *executionProxyImplementation) DeactivateObject(
-	ctx context.Context, current *Transcript, req rpctypes.UpDeactivateObjectReq, rep *rpctypes.UpDeactivateObjectResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpDeactivateObjectReq, rep *rpctypes.UpDeactivateObjectResp,
 ) error {
 
 	current.Deactivate = true
@@ -413,7 +263,7 @@ func NewValidationProxyImplementation(
 }
 
 func (m *validationProxyImplementation) GetCode(
-	ctx context.Context, current *Transcript, req rpctypes.UpGetCodeReq, reply *rpctypes.UpGetCodeResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpGetCodeReq, reply *rpctypes.UpGetCodeResp,
 ) error {
 	codeDescriptor, err := m.dc.GetCode(ctx, req.Code)
 	if err != nil {
@@ -428,13 +278,14 @@ func (m *validationProxyImplementation) GetCode(
 }
 
 func (m *validationProxyImplementation) RouteCall(
-	ctx context.Context, current *Transcript, req rpctypes.UpRouteReq, rep *rpctypes.UpRouteResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpRouteReq, rep *rpctypes.UpRouteResp,
 ) error {
 	if current.Request.Immutable {
 		return errors.New("immutable method can't make calls")
 	}
 
-	incoming, _ := buildIncomingAndOutgoingCallRequests(ctx, current, req)
+	outgoing := common.BuildOutgoingRequest(ctx, current, req)
+	incoming := common.BuildIncomingRequestFromOutgoing(outgoing)
 
 	reqRes := current.HasOutgoingRequest(ctx, *incoming)
 	if reqRes == nil {
@@ -452,9 +303,9 @@ func (m *validationProxyImplementation) RouteCall(
 }
 
 func (m *validationProxyImplementation) SaveAsChild(
-	ctx context.Context, current *Transcript, req rpctypes.UpSaveAsChildReq, rep *rpctypes.UpSaveAsChildResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpSaveAsChildReq, rep *rpctypes.UpSaveAsChildResp,
 ) error {
-	incoming, _ := buildIncomingAndOutgoingSaveAsChildRequests(ctx, current, req)
+	incoming, _ := common.BuildIncomingAndOutgoingSaveAsChildRequests(ctx, current, req)
 
 	reqRes := current.HasOutgoingRequest(ctx, *incoming)
 	if reqRes == nil {
@@ -467,181 +318,13 @@ func (m *validationProxyImplementation) SaveAsChild(
 	rep.Reference = reqRes.NewObject
 
 	return nil
-}
-
-func (m *validationProxyImplementation) SaveAsDelegate(
-	ctx context.Context, current *Transcript, req rpctypes.UpSaveAsDelegateReq, rep *rpctypes.UpSaveAsDelegateResp,
-) error {
-	incoming, _ := buildIncomingAndOutgoingSaveAsDelegateRequests(ctx, current, req)
-
-	reqRes := current.HasOutgoingRequest(ctx, *incoming)
-	if reqRes == nil {
-		return errors.New("unexpected outgoing call during validation")
-	}
-	if reqRes.Error != nil {
-		return reqRes.Error
-	}
-
-	rep.Reference = reqRes.NewObject
-
-	return nil
-}
-
-func (m *validationProxyImplementation) GetObjChildrenIterator(
-	ctx context.Context, current *Transcript,
-	req rpctypes.UpGetObjChildrenIteratorReq,
-	rep *rpctypes.UpGetObjChildrenIteratorResp,
-) error {
-	panic("won't implement, ATM")
-}
-
-func (m *validationProxyImplementation) GetDelegate(
-	ctx context.Context, current *Transcript, req rpctypes.UpGetDelegateReq, rep *rpctypes.UpGetDelegateResp,
-) error {
-	panic("implement me")
 }
 
 func (m *validationProxyImplementation) DeactivateObject(
-	ctx context.Context, current *Transcript, req rpctypes.UpDeactivateObjectReq, rep *rpctypes.UpDeactivateObjectResp,
+	ctx context.Context, current *transcript.Transcript, req rpctypes.UpDeactivateObjectReq, rep *rpctypes.UpDeactivateObjectResp,
 ) error {
 
 	current.Deactivate = true
 
 	return nil
-}
-
-func buildIncomingAndOutgoingCallRequests(
-	_ context.Context, current *Transcript, req rpctypes.UpRouteReq,
-) (*record.IncomingRequest, *record.OutgoingRequest) {
-
-	current.Nonce++
-
-	incoming := record.IncomingRequest{
-		Caller:          req.Callee,
-		CallerPrototype: req.CalleePrototype,
-		Nonce:           current.Nonce,
-
-		Immutable: req.Immutable,
-
-		Object:    &req.Object,
-		Prototype: &req.Prototype,
-		Method:    req.Method,
-		Arguments: req.Arguments,
-
-		APIRequestID: current.Request.APIRequestID,
-		Reason:       current.RequestRef,
-	}
-
-	// Currently IncomingRequest and OutgoingRequest are almost exact copies of each other
-	// thus the following code is a bit ugly. However this will change when we'll
-	// figure out which fields are actually needed in OutgoingRequest and which are
-	// not. Thus please keep the code the way it is for now, dont't introduce any
-	// CommonRequestData structures or something like this.
-	// This being said the implementation of Request interface differs for Incoming and
-	// OutgoingRequest. See corresponding implementation of the interface methods.
-
-	outgoing := record.OutgoingRequest{
-		Caller:          req.Callee,
-		CallerPrototype: req.CalleePrototype,
-		Nonce:           current.Nonce,
-
-		Immutable: req.Immutable,
-
-		Object:    &req.Object,
-		Prototype: &req.Prototype,
-		Method:    req.Method,
-		Arguments: req.Arguments,
-
-		APIRequestID: current.Request.APIRequestID,
-		Reason:       current.RequestRef,
-	}
-
-	if req.Saga {
-		// OutgoingRequest with ReturnMode = ReturnSaga will be called by LME
-		// when current object finishes the execution and validation.
-		outgoing.ReturnMode = record.ReturnSaga
-	} else if !req.Wait {
-		incoming.ReturnMode = record.ReturnNoWait
-		outgoing.ReturnMode = record.ReturnNoWait
-	}
-
-	return &incoming, &outgoing
-}
-
-func buildIncomingAndOutgoingSaveAsChildRequests(
-	_ context.Context, current *Transcript, req rpctypes.UpSaveAsChildReq,
-) (*record.IncomingRequest, *record.OutgoingRequest) {
-
-	current.Nonce++
-
-	incoming := record.IncomingRequest{
-		Caller:          req.Callee,
-		CallerPrototype: req.CalleePrototype,
-		Nonce:           current.Nonce,
-
-		CallType:  record.CTSaveAsChild,
-		Base:      &req.Parent,
-		Prototype: &req.Prototype,
-		Method:    req.ConstructorName,
-		Arguments: req.ArgsSerialized,
-
-		APIRequestID: current.Request.APIRequestID,
-		Reason:       current.RequestRef,
-	}
-
-	outgoing := record.OutgoingRequest{
-		Caller:          req.Callee,
-		CallerPrototype: req.CalleePrototype,
-		Nonce:           current.Nonce,
-
-		CallType:  record.CTSaveAsChild,
-		Base:      &req.Parent,
-		Prototype: &req.Prototype,
-		Method:    req.ConstructorName,
-		Arguments: req.ArgsSerialized,
-
-		APIRequestID: current.Request.APIRequestID,
-		Reason:       current.RequestRef,
-	}
-
-	return &incoming, &outgoing
-}
-
-func buildIncomingAndOutgoingSaveAsDelegateRequests(
-	_ context.Context, current *Transcript, req rpctypes.UpSaveAsDelegateReq,
-) (*record.IncomingRequest, *record.OutgoingRequest) {
-
-	current.Nonce++
-
-	incoming := record.IncomingRequest{
-		Caller:          req.Callee,
-		CallerPrototype: req.CalleePrototype,
-		Nonce:           current.Nonce,
-
-		CallType:  record.CTSaveAsDelegate,
-		Base:      &req.Into,
-		Prototype: &req.Prototype,
-		Method:    req.ConstructorName,
-		Arguments: req.ArgsSerialized,
-
-		APIRequestID: current.Request.APIRequestID,
-		Reason:       current.RequestRef,
-	}
-
-	outgoing := record.OutgoingRequest{
-		Caller:          req.Callee,
-		CallerPrototype: req.CalleePrototype,
-		Nonce:           current.Nonce,
-
-		CallType:  record.CTSaveAsDelegate,
-		Base:      &req.Into,
-		Prototype: &req.Prototype,
-		Method:    req.ConstructorName,
-		Arguments: req.ArgsSerialized,
-
-		APIRequestID: current.Request.APIRequestID,
-		Reason:       current.RequestRef,
-	}
-
-	return &incoming, &outgoing
 }

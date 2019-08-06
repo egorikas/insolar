@@ -36,7 +36,6 @@ import (
 
 var (
 	errZeroNodes = errors.New("zero nodes from network")
-	errNoPulse   = errors.New("no previous pulses")
 )
 
 // PulseManager implements insolar.PulseManager.
@@ -62,6 +61,7 @@ type PulseManager struct {
 	HotSender       executor.HotSender
 
 	WriteManager hot.WriteManager
+	StateIniter  executor.StateIniter
 
 	// setLock locks Set method call.
 	setLock sync.RWMutex
@@ -73,12 +73,14 @@ func NewPulseManager(
 	lightToHeavySyncer replication.LightReplicator,
 	writeManager hot.WriteManager,
 	hotSender executor.HotSender,
+	stateIniter executor.StateIniter,
 ) *PulseManager {
 	pm := &PulseManager{
 		JetSplitter:     jetSplitter,
 		LightReplicator: lightToHeavySyncer,
 		WriteManager:    writeManager,
 		HotSender:       hotSender,
+		StateIniter:     stateIniter,
 	}
 	return pm
 }
@@ -98,37 +100,39 @@ func (m *PulseManager) Set(ctx context.Context, newPulse insolar.Pulse) error {
 	}()
 
 	ctx, span := instracer.StartSpan(
-		ctx, "pulse.process", trace.WithSampler(trace.AlwaysSample()),
+		ctx, "PulseManager.Set", trace.WithSampler(trace.AlwaysSample()),
 	)
 	span.AddAttributes(
 		trace.Int64Attribute("pulse.PulseNumber", int64(newPulse.PulseNumber)),
 	)
 	defer span.End()
 
-	jets, endedPulse, err := m.setUnderGilSection(ctx, newPulse)
+	jets, endedPulse, justJoined, err := m.setUnderGilSection(ctx, newPulse)
 	if err != nil {
-		if err == errZeroNodes || err == errNoPulse {
+		if err == errZeroNodes {
 			logger.Debug("setUnderGilSection return error: ", err)
 			return nil
 		}
 		panic(errors.Wrap(err, "under gil error"))
 	}
 
-	err = m.HotSender.SendHot(ctx, endedPulse.PulseNumber, newPulse.PulseNumber, jets)
-	if err != nil {
-		logger.Error("send Hot failed: ", err)
+	if !justJoined {
+		err = m.HotSender.SendHot(ctx, endedPulse, newPulse.PulseNumber, jets)
+		if err != nil {
+			logger.Error("send Hot failed: ", err)
+		}
+		go m.LightReplicator.NotifyAboutPulse(ctx, newPulse.PulseNumber)
 	}
-	go m.LightReplicator.NotifyAboutPulse(ctx, newPulse.PulseNumber)
 
 	m.MessageHandler.OnPulse(ctx, newPulse)
 	return nil
 }
 
 func (m *PulseManager) setUnderGilSection(ctx context.Context, newPulse insolar.Pulse) (
-	[]insolar.JetID, insolar.Pulse, error,
+	[]insolar.JetID, insolar.PulseNumber, bool, error,
 ) {
 	m.GIL.Acquire(ctx)
-	ctx, span := instracer.StartSpan(ctx, "pulse.gil_locked")
+	ctx, span := instracer.StartSpan(ctx, "PulseManager.setUnderGilSection")
 	defer span.End()
 	defer m.GIL.Release(ctx)
 
@@ -142,7 +146,7 @@ func (m *PulseManager) setUnderGilSection(ctx context.Context, newPulse insolar.
 		fromNetwork := m.NodeNet.GetWorkingNodes()
 		if len(fromNetwork) == 0 {
 			logger.Errorf("received zero nodes for pulse %d", newPulse.PulseNumber)
-			return nil, insolar.Pulse{}, errZeroNodes
+			return nil, 0, false, errZeroNodes
 		}
 		toSet := make([]insolar.Node, 0, len(fromNetwork))
 		for _, n := range fromNetwork {
@@ -160,39 +164,22 @@ func (m *PulseManager) setUnderGilSection(ctx context.Context, newPulse insolar.
 		}
 	}()
 
-	// Updating jet tree if its network start.
-	{
-		_, err := m.PulseCalculator.Backwards(ctx, newPulse.PulseNumber, 1)
-		if err != nil {
-			if err == pulse.ErrNotFound {
-				err := m.JetModifier.Update(ctx, newPulse.PulseNumber, true, insolar.ZeroJetID)
-				if err != nil {
-					panic(errors.Wrap(err, "failed to update jets"))
-				}
-			} else {
-				panic(errors.Wrap(err, "failed to calculate previous pulse"))
-			}
-		}
+	justJoined, jets, err := m.StateIniter.PrepareState(ctx, newPulse.PulseNumber)
+	if err != nil {
+		panic(errors.Wrap(err, "failed to prepare light for start"))
 	}
-
 	endedPulse, err := m.PulseAccessor.Latest(ctx)
 	if err != nil {
-		if err == pulse.ErrNotFound {
-			err := m.JetModifier.Update(ctx, newPulse.PulseNumber, true, insolar.ZeroJetID)
-			if err != nil {
-				panic(errors.Wrap(err, "failed to update jets"))
-			}
-			return nil, insolar.Pulse{}, errNoPulse
-		}
-		panic(errors.Wrap(err, "failed to calculate ended pulse"))
+		panic(errors.Wrap(err, "failed to fetch ended pulse"))
 	}
 
-	jets, err := m.JetSplitter.Do(ctx, endedPulse.PulseNumber, newPulse.PulseNumber)
+	createDrops := !justJoined
+	jets, err = m.JetSplitter.Do(ctx, endedPulse.PulseNumber, newPulse.PulseNumber, jets, createDrops)
 	if err != nil {
 		panic(errors.Wrap(err, "failed to split jets"))
 	}
 
-	m.JetReleaser.ThrowTimeout(ctx, newPulse.PulseNumber)
+	m.JetReleaser.CloseAllUntil(ctx, endedPulse.PulseNumber)
 
 	err = m.WriteManager.CloseAndWait(ctx, endedPulse.PulseNumber)
 	if err != nil {
@@ -204,5 +191,5 @@ func (m *PulseManager) setUnderGilSection(ctx context.Context, newPulse insolar.
 		panic(errors.Wrap(err, "failed to open pulse for writing"))
 	}
 
-	return jets, endedPulse, nil
+	return jets, endedPulse.PulseNumber, justJoined, nil
 }

@@ -109,7 +109,7 @@ func (cr *ContractRequester) SendRequestWithPulse(ctx context.Context, ref *inso
 		},
 	}
 
-	routResult, err := cr.CallMethod(ctx, msg)
+	routResult, err := cr.Call(ctx, msg)
 	if err != nil {
 		return nil, errors.Wrap(err, "[ ContractRequester::SendRequest ] Can't route call")
 	}
@@ -120,7 +120,7 @@ func (cr *ContractRequester) SendRequestWithPulse(ctx context.Context, ref *inso
 func (cr *ContractRequester) calcRequestHash(request record.IncomingRequest) ([insolar.RecordHashSize]byte, error) {
 	var hash [insolar.RecordHashSize]byte
 
-	virtRec := record.Wrap(request)
+	virtRec := record.Wrap(&request)
 	buf, err := virtRec.Marshal()
 	if err != nil {
 		return hash, errors.Wrap(err, "[ ContractRequester::calcRequestHash ] Failed to marshal record")
@@ -129,6 +129,17 @@ func (cr *ContractRequester) calcRequestHash(request record.IncomingRequest) ([i
 	hasher := cr.PlatformCryptographyScheme.ReferenceHasher()
 	copy(hash[:], hasher.Hash(buf)[0:insolar.RecordHashSize])
 	return hash, nil
+}
+
+func (cr *ContractRequester) checkCall(_ context.Context, msg *message.CallMethod) error {
+	switch {
+	case msg.Caller.IsEmpty() && msg.APINode.IsEmpty():
+		return errors.New("either Caller or APINode should be set, both empty")
+	case !msg.Caller.IsEmpty() && !msg.APINode.IsEmpty():
+		return errors.New("either Caller or APINode should be set, both set")
+	}
+
+	return nil
 }
 
 func (cr *ContractRequester) Call(ctx context.Context, inMsg insolar.Message) (insolar.Reply, error) {
@@ -141,6 +152,11 @@ func (cr *ContractRequester) Call(ctx context.Context, inMsg insolar.Message) (i
 
 	if msg.Nonce == 0 {
 		msg.Nonce = randomUint64()
+	}
+
+	err := cr.checkCall(ctx, msg)
+	if err != nil {
+		return nil, errors.Wrap(err, "incorrect request")
 	}
 
 	var ch chan *message.ReturnResults
@@ -207,23 +223,6 @@ func (cr *ContractRequester) Call(ctx context.Context, inMsg insolar.Message) (i
 	}
 }
 
-func (cr *ContractRequester) CallMethod(ctx context.Context, inMsg insolar.Message) (insolar.Reply, error) {
-	return cr.Call(ctx, inMsg)
-}
-
-func (cr *ContractRequester) CallConstructor(ctx context.Context, inMsg insolar.Message) (*insolar.Reference, error) {
-	res, err := cr.Call(ctx, inMsg)
-	if err != nil {
-		return nil, err
-	}
-
-	rep, ok := res.(*reply.CallConstructor)
-	if !ok {
-		return nil, errors.New("Reply is not CallConstructor")
-	}
-	return rep.Object, nil
-}
-
 func (cr *ContractRequester) result(ctx context.Context, msg *message.ReturnResults) error {
 	cr.ResultMutex.Lock()
 	defer cr.ResultMutex.Unlock()
@@ -232,7 +231,7 @@ func (cr *ContractRequester) result(ctx context.Context, msg *message.ReturnResu
 	copy(reqHash[:], msg.RequestRef.Record().Hash())
 	c, ok := cr.ResultMap[reqHash]
 	if !ok {
-		inslogger.FromContext(ctx).Info("unwaited results of request ", msg.RequestRef.String())
+		inslogger.FromContext(ctx).Info("unwanted results of request ", msg.RequestRef.String())
 		if cr.lr != nil {
 			return cr.lr.AddUnwantedResponse(ctx, msg)
 		}
