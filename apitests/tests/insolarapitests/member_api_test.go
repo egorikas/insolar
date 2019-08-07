@@ -2,14 +2,11 @@ package insolarapitests
 
 import (
 	"github.com/insolar/insolar/apitests/apihelper"
-	"log"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
-var logger *log.Logger
-
 func TestCreateMember(t *testing.T) {
-	//rootMember := apihelper.GetRootMember()
 	member := apihelper.CreateMember()
-	logger.Printf(member.MemberResponseResult.Result.CallResult.Reference)
+	require.NotEmpty(t, member.MemberResponseResult.Result.CallResult.Reference)
 }
