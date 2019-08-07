@@ -113,7 +113,7 @@ func CreateMember() MemberObject {
 			PublicKey: string(ms.PemPublicKey),
 		},
 	}
-	d, s := sign(request, reflect.TypeOf(insolar_api.MemberCreateRequest{}), ms.PrivateKey)
+	d, s := sign(request, ms.PrivateKey)
 	response, _, err := memberApi.MemberCreate(nil, d, s, request)
 	if err != nil {
 		log.Fatalln(err)
@@ -143,7 +143,7 @@ func MemberMigrationCreate() MemberObject {
 	}
 	//json.Marshal(request)
 
-	d, s := sign(request, reflect.TypeOf(insolar_api.MemberMigrationCreateRequest{}), ms.PrivateKey)
+	d, s := sign(request, ms.PrivateKey)
 	response, _, err := migrationApi.MemberMigrationCreate(nil, d, s, request)
 	if err != nil {
 		log.Fatalln(err)
@@ -175,7 +175,7 @@ func MemberMigrationCreate() MemberObject {
 	}
 }
 
-func sign(payload interface{}, t reflect.Type, privateKey *ecdsa.PrivateKey) (string, string) {
+func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
 	var err error
 	// get hash of byte slice of the payload encoded with the same way as openapi-generator does in the generated client.
 	// this is done to avoid setting incorrect body value into request by generated code.
@@ -186,7 +186,7 @@ func sign(payload interface{}, t reflect.Type, privateKey *ecdsa.PrivateKey) (st
 		log.Fatalln(err)
 	}
 	request, err := http.NewRequest("ignore", "ignore", bodyBuf)
-	memberCreateRequest := reflect.New(reflect.TypeOf(t))
+	memberCreateRequest := reflect.TypeOf(payload)
 	rawBody, err := api.UnmarshalRequest(request, &memberCreateRequest)
 	if err != nil {
 		log.Fatalln(err)
