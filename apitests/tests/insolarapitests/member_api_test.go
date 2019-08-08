@@ -7,6 +7,6 @@ import (
 )
 
 func TestCreateMember(t *testing.T) {
-	member := apihelper.CreateMember()
+	member := apihelper.CreateMember(t)
 	require.NotEmpty(t, member.MemberResponseResult.Result.CallResult.Reference)
 }

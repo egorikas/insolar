@@ -5,8 +5,22 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"github.com/stretchr/testify/require"
+	"testing"
 )
+
+type errorStruct struct {
+	Error struct {
+		Data struct {
+			RequestReference string `json:"requestReference"`
+			TraceID          string `json:"traceID"`
+		} `json:"data"`
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
 
 func NewMemberSignature() (MemberSignature, error) {
 	var err error
@@ -30,4 +44,15 @@ func NewMemberSignature() (MemberSignature, error) {
 		X509PublicKey: x509PublicKey,
 		PemPublicKey:  pemPublicKey,
 	}, err
+}
+
+func checkResponseHasNoError(t *testing.T, response interface{}) {
+	j, err := json.Marshal(response)
+	require.Nil(t, err)
+	var errorBody errorStruct
+	err = json.Unmarshal(j, &errorBody)
+	require.Nil(t, err, "error while unmarshaling")
+	if errorBody.Error.Message != "" || errorBody.Error.Code != 0 {
+		require.Emptyf(t, errorBody.Error.Message, "error in response: %v", errorBody.Error.Message)
+	}
 }

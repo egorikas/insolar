@@ -11,7 +11,7 @@ package apihelper
 //	MIGRATIONADDADDRESSES   = "migration.addAddresses"
 //)
 //
-//var logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+//var Logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 //var informationApi = getClient().InformationApi
 //var memberApi = getClient().MemberApi
 //var migrationApi = getClient().MigrationApi
