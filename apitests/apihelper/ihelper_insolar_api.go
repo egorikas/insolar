@@ -1,20 +1,10 @@
 package apihelper
 
 import (
-	"bytes"
-	"crypto/ecdsa"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/asn1"
-	"encoding/base64"
-	"encoding/json"
-	"github.com/insolar/insolar/api"
 	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 	"github.com/stretchr/testify/require"
 	"log"
-	"net/http"
 	"os"
-	"reflect"
 	"testing"
 )
 
@@ -66,15 +56,13 @@ func GetSeed(t *testing.T) string {
 func GetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
 	Logger.Printf("%v request body:\n %v", GETSEED, r)
 	response, http, err := informationApi.GetSeed(nil, r)
-	if err != nil {
-		Logger.Fatalln(err)
-	}
-	s := response.Result.Seed
+	checkResponseHasNoError(t, response)
+	require.Nil(t, err)
 	Logger.Printf("%v response statusCode:\n %v", GETSEED, http.StatusCode)
 	Logger.Printf("%v response id:\n %v", GETSEED, response.Id)
 	Logger.Printf("%v response body:\n %v", GETSEED, response)
 	Logger.Printf("%v response Err:\n %v", GETSEED, response.Error)
-	return s
+	return response.Result.Seed
 }
 
 func GetInfo(t *testing.T) insolar_api.NetworkGetInfoResponseResult {
@@ -245,52 +233,4 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse {
 		log.Fatalln(err)
 	}
 	return response
-}
-
-func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
-	var err error
-	// get hash of byte slice of the payload encoded with the same way as openapi-generator does in the generated client.
-	// this is done to avoid setting incorrect body value into request by generated code.
-	// if you use custom code to create insolar-api client, use 'json.Marshal(payload)' and get hash value of it s result.
-	bodyBuf := &bytes.Buffer{}
-	err = json.NewEncoder(bodyBuf).Encode(payload)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	request, err := http.NewRequest("ignore", "ignore", bodyBuf)
-	memberCreateRequest := reflect.TypeOf(payload)
-	rawBody, err := api.UnmarshalRequest(request, &memberCreateRequest)
-	if err != nil {
-		Logger.Fatalln(err)
-	}
-	hash := sha256.Sum256(rawBody)
-
-	// Sign the hash with the private key:
-	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
-	if err != nil {
-		Logger.Fatalln(err)
-	}
-
-	// See if the signature is valid:
-	valid := ecdsa.Verify(&privateKey.PublicKey, hash[:], r, s)
-	if !valid {
-		Logger.Fatal("signature not verified")
-	}
-
-	// Convert the signature into ASN.1 format:
-	sig := ecdsaSignature{
-		R: r,
-		S: s,
-	}
-	signature, _ := asn1.Marshal(sig)
-
-	// Convert both hash and signature into a Base64 string:
-	hash64 := base64.StdEncoding.EncodeToString(hash[:])
-	signature64 := base64.StdEncoding.EncodeToString(signature)
-
-	var Digest = "SHA-256=" + hash64
-	var Signature = "keyId=\"member-pub-key\", algorithm=\"ecdsa\", headers=\"digest\", signature=" + signature64
-	Logger.Println("Digest = " + Digest)
-	Logger.Println("Signature = " + Signature)
-	return Digest, Signature
 }

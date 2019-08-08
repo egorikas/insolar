@@ -7,7 +7,7 @@ import (
 )
 
 func TestMigrationAddAddresses(t *testing.T) {
-	response := apihelper.AddMigrationAddresses()
+	response := apihelper.AddMigrationAddresses(t)
 	require.NotEmpty(t, response.Result)
 	require.Empty(t, response.Error)
 }

@@ -4,6 +4,7 @@ import (
 	"github.com/insolar/insolar/apitests/apiclient/insolar_internal_api"
 	uuid "github.com/satori/go.uuid"
 	"log"
+	"testing"
 )
 
 const (
@@ -22,19 +23,19 @@ func getInternalClient() *insolar_internal_api.APIClient {
 	return insolar_internal_api.NewAPIClient(&c)
 }
 
-func AddMigrationAddresses() insolar_internal_api.MigrationDeactivateDaemonResponse {
+func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivateDaemonResponse {
 	uuids, err := uuid.NewV4()
 	if err != nil {
 		panic(err)
 	}
-	adminPub, adminPrivate := LoadAdminMemberKeys()
+	adminPub, _ := LoadAdminMemberKeys()
 
 	body := insolar_internal_api.MigrationAddAddressesRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
 		Method:  CONTRACTCALL,
 		Params: insolar_internal_api.MigrationAddAddressesRequestParams{
-			Seed:     GetSeed(),
+			Seed:     GetSeed(t),
 			CallSite: MIGRATIONADDADDRESSES,
 			CallParams: insolar_internal_api.MigrationAddAddressesRequestParamsCallParams{
 				MigrationAddresses: []string{uuids.String()},
@@ -44,8 +45,9 @@ func AddMigrationAddresses() insolar_internal_api.MigrationDeactivateDaemonRespo
 		},
 	}
 	Logger.Printf("%v request body:\n %v", MIGRATIONADDADDRESSES, body)
-	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, "", adminPrivate, body) //todo подпись
-	Logger.Printf("%v response statusCode:\n %v", MIGRATIONADDADDRESSES, http.StatusCode)
+	response, _, err := internalMigrationApi.AddMigrationAddresses(nil, body) //todo подпись
+	checkResponseHasNoError(t, response)
+	Logger.Printf("%v response statusCode:\n %v", MIGRATIONADDADDRESSES, response.Error.Code)
 	Logger.Printf("%v response id:\n %v", MIGRATIONADDADDRESSES, response.Id)
 	if err != nil {
 		log.Fatalln(err)
