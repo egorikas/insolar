@@ -117,38 +117,38 @@ func CreateMember(t *testing.T) MemberObject {
 	}
 	d, s := sign(request, ms.PrivateKey)
 	response, _, err := memberApi.MemberCreate(nil, d, s, request)
-	checkResponseHasNoError(t, response)
 	require.Nil(t, err)
+	checkResponseHasNoError(t, response)
 	Logger.Printf("Member created: %v", response.Result.CallResult.Reference)
 	return MemberObject{
+		MemberReference:      response.Result.CallResult.Reference,
 		Signature:            ms,
 		MemberResponseResult: response,
 	}
 }
 
-func (m *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) string {
-	//seed := GetSeed()
-	//request := insolar_api.MemberTransferRequest{
-	//	Jsonrpc: JSONRPCVersion,
-	//	Id:      getRequestId(),
-	//	Method:  APICALL,
-	//	Params: insolar_api.MemberTransferRequestParams{
-	//		Seed:     seed,
-	//		CallSite: MEMBERTRANSFER,
-	//		CallParams: insolar_api.MemberTransferRequestParamsCallParams{
-	//			Amount:            amount,
-	//			ToMemberReference: toMemberRef,
-	//		},
-	//		PublicKey: string(m.Signature.PemPublicKey),
-	//		Reference: m.MemberResponseResult.Result.CallResult.Reference,
-	//	},
-	//}
-	//d, s := sign(request, m.Signature.PrivateKey)
-	//response, _, err := memberApi.MemberTransfer(nil, d, s, request)
-	//if err != nil {
-	//	log.Fatalln(err)
-	//}
-	return "nil"
+func (m *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) insolar_api.MemberTransferResponse {
+	seed := GetSeed(t)
+	request := insolar_api.MemberTransferRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      GetRequestId(),
+		Method:  APICALL,
+		Params: insolar_api.MemberTransferRequestParams{
+			Seed:     seed,
+			CallSite: MEMBERTRANSFER,
+			CallParams: insolar_api.MemberTransferRequestParamsCallParams{
+				Amount:            amount,
+				ToMemberReference: toMemberRef,
+			},
+			PublicKey: string(m.Signature.PemPublicKey),
+			Reference: m.MemberResponseResult.Result.CallResult.Reference,
+		},
+	}
+	d, s := sign(request, m.Signature.PrivateKey)
+	response, _, err := memberApi.MemberTransfer(nil, d, s, request)
+	require.Nil(t, err)
+	checkResponseHasNoError(t, response)
+	return response
 }
 
 func MemberMigrationCreate(t *testing.T) MemberObject {
@@ -182,7 +182,8 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	//memberReference := member.Result.CallResult.Reference
 
 	return MemberObject{
-		Signature: ms,
+		MemberReference: response.Result.CallResult.Reference,
+		Signature:       ms,
 		MemberResponseResult: insolar_api.MemberCreateResponse{
 			Jsonrpc: response.Jsonrpc,
 			Id:      response.Id,
