@@ -204,10 +204,13 @@ func (pf *PendingFinished) Type() insolar.MessageType {
 // for more details.
 type AdditionalCallFromPreviousExecutor struct {
 	ObjectReference insolar.Reference
-	Pending         insolar.PendingState
-	RequestRef      insolar.Reference
-	Request         record.IncomingRequest
-	ServiceData     ServiceData
+	// pending in this is message can be used to say: "this is the only
+	// incomplete request on the object, you can start execution".
+	// However, we lost this ability.
+	Pending     insolar.PendingState
+	RequestRef  insolar.Reference
+	Request     record.IncomingRequest
+	ServiceData ServiceData
 }
 
 func (m *AdditionalCallFromPreviousExecutor) GetCaller() *insolar.Reference {

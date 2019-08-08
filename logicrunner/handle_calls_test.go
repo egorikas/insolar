@@ -240,7 +240,7 @@ func TestHandleCall_Present(t *testing.T) {
 				Publisher: nil,
 				StateStorage: NewStateStorageMock(mc).
 					GetExecutionArchiveMock.Expect(objRef).Return(
-					NewExecutionArchiveMock(mc).FindRequestLoopMock.Return(false).IsEmptyMock.Return(true),
+					NewExecutionArchiveMock(mc).FindRequestLoopMock.Return(false),
 				),
 				ResultsMatcher: nil,
 				lr: &LogicRunner{
@@ -351,7 +351,7 @@ func TestHandleCall_Present(t *testing.T) {
 		objRef := gen.Reference()
 		handler := HandleCall{
 			dep: &Dependencies{
-				Publisher: nil,
+				Publisher:      nil,
 				ResultsMatcher: nil,
 				lr: &LogicRunner{
 					ArtifactManager: artifacts.NewClientMock(mc),
@@ -498,9 +498,9 @@ func TestHandleCall_Present(t *testing.T) {
 		objRef := gen.Reference()
 		reqRef := gen.Reference()
 
-		resRecord := &record.Result{Payload: []byte{3,2,1}}
+		resRecord := &record.Result{Payload: []byte{3, 2, 1}}
 		virtResRecord := record.Wrap(resRecord)
-		matRecord := record.Material{Virtual:virtResRecord}
+		matRecord := record.Material{Virtual: virtResRecord}
 		matRecordSerialized, err := matRecord.Marshal()
 		require.NoError(t, err)
 
@@ -512,9 +512,9 @@ func TestHandleCall_Present(t *testing.T) {
 			case *RegisterIncomingRequest:
 				p.result <- &payload.RequestInfo{
 					RequestID: *reqRef.Record(),
-					ObjectID: *objRef.Record(),
-					Request: []byte{1,2,3},
-					Result: matRecordSerialized,
+					ObjectID:  *objRef.Record(),
+					Request:   []byte{1, 2, 3},
+					Result:    matRecordSerialized,
 				}
 				return nil
 			case *AddFreshRequest:
