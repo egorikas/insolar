@@ -1,4 +1,4 @@
-package insolarapitests
+package publicapitests
 
 import (
 	"fmt"

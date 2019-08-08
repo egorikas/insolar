@@ -1,4 +1,4 @@
-package insolarapitests
+package publicapitests
 
 import (
 	"github.com/insolar/insolar/apitests/apihelper"
