@@ -33,11 +33,11 @@ const (
 )
 
 var logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
-var informationApi = getClient().InformationApi
-var memberApi = getClient().MemberApi
-var migrationApi = getClient().MigrationApi
+var informationApi = GetClient().InformationApi
+var memberApi = GetClient().MemberApi
+var migrationApi = GetClient().MigrationApi
 
-func getClient() *insolar_api.APIClient {
+func GetClient() *insolar_api.APIClient {
 	c := insolar_api.Configuration{
 		BasePath: "http://localhost:19101",
 		//Host:     "",
@@ -45,7 +45,7 @@ func getClient() *insolar_api.APIClient {
 	return insolar_api.NewAPIClient(&c)
 }
 
-func getRequestId() int32 {
+func GetRequestId() int32 {
 	id++
 	return id
 }
@@ -53,9 +53,13 @@ func getRequestId() int32 {
 func GetSeed() string {
 	r := insolar_api.NodeGetSeedRequest{
 		Jsonrpc: JSONRPCVersion,
-		Id:      getRequestId(),
+		Id:      GetRequestId(),
 		Method:  GETSEED,
 	}
+	return GetSeedRequest(r)
+}
+
+func GetSeedRequest(r insolar_api.NodeGetSeedRequest) string {
 	response, _, err := informationApi.GetSeed(nil, r)
 	if err != nil {
 		logger.Fatalln(err)
@@ -68,7 +72,7 @@ func GetSeed() string {
 func GetInfo() insolar_api.NetworkGetInfoResponseResult {
 	infoBody := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
-		Id:      getRequestId(),
+		Id:      GetRequestId(),
 		Method:  GETINFO,
 		Params:  nil,
 	}
@@ -83,7 +87,7 @@ func GetInfo() insolar_api.NetworkGetInfoResponseResult {
 func GetStatus() insolar_api.NodeGetStatusResponseResult {
 	infoBody := insolar_api.NodeGetStatusRequest{
 		Jsonrpc: JSONRPCVersion,
-		Id:      getRequestId(),
+		Id:      GetRequestId(),
 		Method:  GETSTATUS,
 		Params:  nil,
 	}
