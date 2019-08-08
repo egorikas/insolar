@@ -229,6 +229,7 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse {
 	response, http, err := migrationApi.DepositTransfer(nil, d, s, request)
 	Logger.Printf("%v response body:\n %v", DEPOSITTRANSFER, response)
 	Logger.Printf("%v response Status:\n %v", DEPOSITTRANSFER, http.StatusCode)
+	checkResponseHasNoError(t, response)
 	if err != nil {
 		log.Fatalln(err)
 	}

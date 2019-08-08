@@ -1,7 +1,6 @@
 package publicapitests
 
 import (
-	"fmt"
 	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 	"github.com/insolar/insolar/apitests/apihelper"
 	"github.com/stretchr/testify/require"
@@ -13,7 +12,6 @@ import (
 
 func TestGetSeed(t *testing.T) {
 	seed := apihelper.GetSeed(t)
-	fmt.Printf(seed)
 	require.NotEmpty(t, seed)
 }
 

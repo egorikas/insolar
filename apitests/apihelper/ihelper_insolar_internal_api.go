@@ -45,7 +45,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 		},
 	}
 	Logger.Printf("%v request body:\n %v", MIGRATIONADDADDRESSES, body)
-	response, _, err := internalMigrationApi.AddMigrationAddresses(nil, body) //todo подпись
+	response, _, err := internalMigrationApi.AddMigrationAddresses(nil, "", "", body) //todo подпись
 	checkResponseHasNoError(t, response)
 	Logger.Printf("%v response statusCode:\n %v", MIGRATIONADDADDRESSES, response.Error.Code)
 	Logger.Printf("%v response id:\n %v", MIGRATIONADDADDRESSES, response.Id)
