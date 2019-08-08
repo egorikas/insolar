@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"io/ioutil"
 	"testing"
 )
 
@@ -46,6 +48,25 @@ func NewMemberSignature() (MemberSignature, error) {
 	}, err
 }
 
+func LoadAdminMemberKeys() (string, string) {
+	text, err := ioutil.ReadFile("~/go/src/github.com/insolar/insolar/.artifacts/launchnet/configs/migration_admin_member_keys.json")
+	if err != nil {
+		errors.Wrapf(err, "[ loadMemberKeys ] could't load member keys")
+	}
+	var data map[string]string
+	err = json.Unmarshal(text, &data)
+	if err != nil {
+		errors.Wrapf(err, "[ loadMemberKeys ] could't unmarshal member keys")
+	}
+	if data["private_key"] == "" || data["public_key"] == "" {
+		errors.New("[ loadMemberKeys ] could't find any keys")
+	}
+	privateKey := data["private_key"]
+	publicKey := data["public_key"]
+
+	return privateKey, publicKey
+}
+
 func checkResponseHasNoError(t *testing.T, response interface{}) {
 	j, err := json.Marshal(response)
 	require.Nil(t, err)
@@ -56,22 +77,3 @@ func checkResponseHasNoError(t *testing.T, response interface{}) {
 		require.Emptyf(t, errorBody.Error.Message, "error in response: %v", errorBody.Error.Message)
 	}
 }
-
-//func loadAdminMemberKeys() (string, string) {
-//	text, err := ioutil.ReadFile("~/go/src/github.com/insolar/insolar/.artifacts/launchnet/configs/migration_admin_member_keys.json")
-//	if err != nil {
-//		errors.Wrapf(err, "[ loadMemberKeys ] could't load member keys")
-//	}
-//	var data map[string]string
-//	err = json.Unmarshal(text, &data)
-//	if err != nil {
-//		 errors.Wrapf(err, "[ loadMemberKeys ] could't unmarshal member keys")
-//	}
-//	if data["private_key"] == "" || data["public_key"] == "" {
-//		errors.New("[ loadMemberKeys ] could't find any keys")
-//	}
-//	privateKey := data["private_key"]
-//	publicKey := data["public_key"]
-//
-//	return privateKey, publicKey
-//}

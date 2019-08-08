@@ -24,6 +24,7 @@ const (
 	url            = "http://localhost:19101"
 	JSONRPCVersion = "2.0"
 	APICALL        = "api.call"
+	CONTRACTCALL   = "contract.call"
 	//information_api
 	GETSEED   = "node.getSeed"
 	GETINFO   = "network.getInfo"
@@ -33,6 +34,7 @@ const (
 	MEMBERTRANSFER = "member.transfer"
 	//migration_api
 	MEMBERMIGRATIONCREATE = "member.migrationCreate"
+	DEPOSITTRANSFER       = "deposit.transfer"
 )
 
 var Logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
@@ -42,8 +44,7 @@ var migrationApi = GetClient().MigrationApi
 
 func GetClient() *insolar_api.APIClient {
 	c := insolar_api.Configuration{
-		BasePath: "http://localhost:19101",
-		//Host:     "",
+		BasePath: url,
 	}
 	return insolar_api.NewAPIClient(&c)
 }
@@ -63,12 +64,16 @@ func GetSeed(t *testing.T) string {
 }
 
 func GetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
-	response, _, err := informationApi.GetSeed(nil, r)
+	Logger.Printf("%v request body:\n %v", GETSEED, r)
+	response, http, err := informationApi.GetSeed(nil, r)
 	if err != nil {
 		Logger.Fatalln(err)
 	}
 	s := response.Result.Seed
-	Logger.Println("Get seed result: " + s)
+	Logger.Printf("%v response statusCode:\n %v", GETSEED, http.StatusCode)
+	Logger.Printf("%v response id:\n %v", GETSEED, response.Id)
+	Logger.Printf("%v response body:\n %v", GETSEED, response)
+	Logger.Printf("%v response Err:\n %v", GETSEED, response.Error)
 	return s
 }
 
@@ -177,7 +182,10 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	//json.Marshal(request)
 
 	d, s := sign(request, ms.PrivateKey)
-	response, _, err := migrationApi.MemberMigrationCreate(nil, d, s, request)
+	Logger.Printf("%v request body:\n %v", MEMBERMIGRATIONCREATE, request)
+	response, http, err := migrationApi.MemberMigrationCreate(nil, d, s, request)
+	Logger.Printf("%v response body:\n %v", MEMBERMIGRATIONCREATE, response)
+	Logger.Printf("%v response Status:\n %v", MEMBERMIGRATIONCREATE, http.StatusCode)
 	checkResponseHasNoError(t, response)
 	if err != nil {
 		log.Fatalln(err)
@@ -207,6 +215,36 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 			},
 		},
 	}
+}
+
+func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse {
+	var err error
+	ms, _ := NewMemberSignature()
+
+	request := insolar_api.DepositTransferRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      1,
+		Method:  APICALL,
+		Params: insolar_api.DepositTransferRequestParams{
+			Seed:     GetSeed(t),
+			CallSite: DEPOSITTRANSFER,
+			CallParams: insolar_api.DepositTransferRequestParamsCallParams{
+				Amount:    "1000",
+				EthTxHash: "",
+			},
+			PublicKey: string(ms.PemPublicKey),
+		},
+	}
+
+	d, s := sign(request, ms.PrivateKey)
+	Logger.Printf("%v request body:\n %v", DEPOSITTRANSFER, request)
+	response, http, err := migrationApi.DepositTransfer(nil, d, s, request)
+	Logger.Printf("%v response body:\n %v", DEPOSITTRANSFER, response)
+	Logger.Printf("%v response Status:\n %v", DEPOSITTRANSFER, http.StatusCode)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	return response
 }
 
 func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
