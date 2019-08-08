@@ -1,17 +1,19 @@
 package apihelper
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
+	"github.com/insolar/insolar/api"
 	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
-
 	"log"
+	"net/http"
 	"os"
+	"reflect"
 )
 
 var id int32 = 0
@@ -74,7 +76,7 @@ func GetInfo() insolar_api.NetworkGetInfoResponseResult {
 	if err != nil {
 		logger.Fatalln(err)
 	}
-	//logger.Println("Get seed result: " )
+	logger.Println("Get info result: ok")
 	return response.Result
 }
 
@@ -106,21 +108,17 @@ func CreateMember() MemberObject {
 		Id:      1,
 		Method:  APICALL,
 		Params: insolar_api.MemberCreateRequestParams{
-			Seed:       seed,
-			CallSite:   MEMBERCREATE,
-			CallParams: nil,
-			PublicKey:  string(ms.PemPublicKey),
+			Seed:      seed,
+			CallSite:  MEMBERCREATE,
+			PublicKey: string(ms.PemPublicKey),
 		},
 	}
-	//json.Marshal(request)
-
-	var headers = SignRequestHeaders(request, ms.PrivateKey)
-	response, _, err := memberApi.MemberCreate(nil, headers.Digest, headers.Signature, request)
+	d, s := sign(request, ms.PrivateKey)
+	response, _, err := memberApi.MemberCreate(nil, d, s, request)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// Put your reference into a variable to form a transfer request next:
-	//memberReference := member.Result.CallResult.Reference
+	logger.Printf("Member created: %v", response.Result.CallResult.Reference)
 	return MemberObject{
 		Signature:            ms,
 		MemberResponseResult: response,
@@ -145,8 +143,8 @@ func MemberMigrationCreate() MemberObject {
 	}
 	//json.Marshal(request)
 
-	var headers = SignRequestHeaders(request, ms.PrivateKey)
-	response, _, err := migrationApi.MemberMigrationCreate(nil, headers.Digest, headers.Signature, request)
+	d, s := sign(request, ms.PrivateKey)
+	response, _, err := migrationApi.MemberMigrationCreate(nil, d, s, request)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -177,15 +175,23 @@ func MemberMigrationCreate() MemberObject {
 	}
 }
 
-func SignRequestHeaders(payload interface{}, privateKey *ecdsa.PrivateKey) SignatureHeaders {
-	// Marshal the payload into JSON:
-	jsonPayload, err := json.Marshal(payload)
+func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
+	var err error
+	// get hash of byte slice of the payload encoded with the same way as openapi-generator does in the generated client.
+	// this is done to avoid setting incorrect body value into request by generated code.
+	// if you use custom code to create insolar-api client, use 'json.Marshal(payload)' and get hash value of it s result.
+	bodyBuf := &bytes.Buffer{}
+	err = json.NewEncoder(bodyBuf).Encode(payload)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	// Take a SHA-256 hash of the payload:
-	hash := sha256.Sum256(jsonPayload)
+	request, err := http.NewRequest("ignore", "ignore", bodyBuf)
+	memberCreateRequest := reflect.TypeOf(payload)
+	rawBody, err := api.UnmarshalRequest(request, &memberCreateRequest)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	hash := sha256.Sum256(rawBody)
 
 	// Sign the hash with the private key:
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
@@ -195,7 +201,9 @@ func SignRequestHeaders(payload interface{}, privateKey *ecdsa.PrivateKey) Signa
 
 	// See if the signature is valid:
 	valid := ecdsa.Verify(&privateKey.PublicKey, hash[:], r, s)
-	fmt.Println("signature verified:", valid)
+	if !valid {
+		logger.Fatal("signature not verified")
+	}
 
 	// Convert the signature into ASN.1 format:
 	sig := ecdsaSignature{
@@ -208,13 +216,9 @@ func SignRequestHeaders(payload interface{}, privateKey *ecdsa.PrivateKey) Signa
 	hash64 := base64.StdEncoding.EncodeToString(hash[:])
 	signature64 := base64.StdEncoding.EncodeToString(signature)
 
-	// Set headers and send the signed request:
 	var Digest = "SHA-256=" + hash64
 	var Signature = "keyId=\"member-pub-key\", algorithm=\"ecdsa\", headers=\"digest\", signature=" + signature64
-	fmt.Printf("Digest %v\n", Digest)
-	fmt.Printf("Signature %v\n", Signature)
-	return SignatureHeaders{
-		Signature: Signature,
-		Digest:    Digest,
-	}
+	logger.Println("Digest = " + Digest)
+	logger.Println("Signature = " + Signature)
+	return Digest, Signature
 }
