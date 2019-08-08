@@ -127,6 +127,26 @@ func CreateMember(t *testing.T) MemberObject {
 	}
 }
 
+func (m *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetResponse {
+	seed := GetSeed(t)
+	request := insolar_api.MemberGetRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      GetRequestId(),
+		Method:  APICALL,
+		Params: insolar_api.MemberGetRequestParams{
+			Seed:       seed,
+			CallSite:   "member.get",
+			CallParams: nil,
+			PublicKey:  string(m.Signature.PemPublicKey),
+		},
+	}
+	d, s := sign(request, m.Signature.PrivateKey)
+	response, _, err := memberApi.MemberGet(nil, d, s, request)
+	require.Nil(t, err)
+	checkResponseHasNoError(t, response)
+	return response
+}
+
 func (m *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) insolar_api.MemberTransferResponse {
 	seed := GetSeed(t)
 	request := insolar_api.MemberTransferRequest{
