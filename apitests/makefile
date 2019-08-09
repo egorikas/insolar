@@ -1,0 +1,21 @@
+TEST_COUNT ?= 1
+
+.PHONY: all
+all: codegen-latest tests ## run api tests
+
+.PHONY: tests
+tests: ## run api tests
+	go test ./tests -count=$(TEST_COUNT)
+
+.PHONY: codegen-latest
+codegen-latest: pull codegen ## generate api client from latet repo state
+
+.PHONY: pull
+pull: ## get actual state in api respositories
+#	chmod +x apiclient/pull-repos.sh
+	. apiclient/pull-repos.sh
+
+.PHONY: codegen
+codegen: ## generate api client
+#	chmod +x apiclient/generate-api-cli.sh
+	. apiclient/generate-api-cli.sh
