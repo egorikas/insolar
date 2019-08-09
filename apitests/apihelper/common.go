@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"github.com/insolar/insolar/api"
+	"github.com/insolar/insolar/apitests/apihelper/apilogger"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"io/ioutil"
@@ -56,7 +57,7 @@ func NewMemberSignature() (MemberSignature, error) {
 	}, err
 }
 
-func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
+func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string, map[string]string) {
 	var err error
 	// get hash of byte slice of the payload encoded with the same way as openapi-generator does in the generated client.
 	// this is done to avoid setting incorrect body value into request by generated code.
@@ -70,20 +71,20 @@ func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
 	memberCreateRequest := reflect.TypeOf(payload)
 	rawBody, err := api.UnmarshalRequest(request, &memberCreateRequest)
 	if err != nil {
-		Logger.Fatalln(err)
+		apilogger.Fatal(err)
 	}
 	hash := sha256.Sum256(rawBody)
 
 	// Sign the hash with the private key:
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
 	if err != nil {
-		Logger.Fatalln(err)
+		apilogger.Fatal(err)
 	}
 
 	// See if the signature is valid:
 	valid := ecdsa.Verify(&privateKey.PublicKey, hash[:], r, s)
 	if !valid {
-		Logger.Fatal("signature not verified")
+		apilogger.Fatal("signature not verified")
 	}
 
 	// Convert the signature into ASN.1 format:
@@ -99,9 +100,7 @@ func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string) {
 
 	var Digest = "SHA-256=" + hash64
 	var Signature = "keyId=\"member-pub-key\", algorithm=\"ecdsa\", headers=\"digest\", signature=" + signature64
-	Logger.Println("Digest = " + Digest)
-	Logger.Println("Signature = " + Signature)
-	return Digest, Signature
+	return Digest, Signature, map[string]string{"Digest": Digest, "Signature": Signature}
 }
 
 func LoadAdminMemberKeys() (string, string) {
@@ -123,7 +122,7 @@ func LoadAdminMemberKeys() (string, string) {
 	return privateKey, publicKey
 }
 
-func checkResponseHasNoError(t *testing.T, response interface{}) {
+func CheckResponseHasNoError(t *testing.T, response interface{}) {
 	j, err := json.Marshal(response)
 	require.Nil(t, err)
 	var errorBody errorStruct

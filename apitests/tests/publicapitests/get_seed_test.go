@@ -3,9 +3,9 @@ package publicapitests
 import (
 	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 	"github.com/insolar/insolar/apitests/apihelper"
+	"github.com/insolar/insolar/apitests/apihelper/apilogger"
 	"github.com/insolar/insolar/testutils"
 	"github.com/stretchr/testify/require"
-	"log"
 	"testing"
 )
 
@@ -108,15 +108,10 @@ func TestGetSeedWithBadRequestId(t *testing.T) {
 }
 
 func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error error) {
-	apihelper.Logger.Printf("%v request body:\n %v", apihelper.GetSeedMethod, r)
+	apilogger.LogApiRequest(r.Method, r, nil)
 	response, http, err := apihelper.GetClient().InformationApi.GetSeed(nil, r)
-	apihelper.Logger.Printf("%v response statusCode:\n %v", apihelper.GetSeedMethod, http.StatusCode)
-	apihelper.Logger.Printf("%v response id:\n %v", apihelper.GetSeedMethod, response.Id)
-	apihelper.Logger.Printf("%v response body:\n %v", apihelper.GetSeedMethod, response)
-	apihelper.Logger.Printf("%v response Err:\n %v", apihelper.GetSeedMethod, response.Error)
-	if err != nil {
-		log.Fatalln(err)
-	}
+	require.Nil(t, err)
+	apilogger.LogApiResponse(http, response)
 	require.Equal(t, 200, http.StatusCode)
 	require.Empty(t, response.Result)
 	require.Equal(t, error.Message, response.Error.Message)
