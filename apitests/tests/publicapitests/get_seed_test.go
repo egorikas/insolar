@@ -77,7 +77,7 @@ func TestGetSeedWithBadJsonVersion(t *testing.T) {
 		r := insolar_api.NodeGetSeedRequest{
 			Jsonrpc: tc.input,
 			Id:      apihelper.GetRequestId(),
-			Method:  apihelper.GETSEED,
+			Method:  apihelper.GetSeedMethod,
 		}
 		getSeedWithBadRequest(t, r, tc.expectedError)
 	}
@@ -86,7 +86,7 @@ func TestGetSeedWithBadJsonVersion(t *testing.T) {
 func TestGetSeedWithoutJsonField(t *testing.T) {
 	r := insolar_api.NodeGetSeedRequest{
 		Id:     apihelper.GetRequestId(),
-		Method: apihelper.GETSEED,
+		Method: apihelper.GetSeedMethod,
 	}
 	getSeedWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
 }
@@ -101,19 +101,19 @@ func TestGetSeedWithBadRequestId(t *testing.T) {
 		r := insolar_api.NodeGetSeedRequest{
 			Jsonrpc: apihelper.JSONRPCVersion,
 			Id:      tc.input,
-			Method:  apihelper.GETSEED,
+			Method:  apihelper.GetSeedMethod,
 		}
 		getSeedWithBadRequest(t, r, tc.expectedError)
 	}
 }
 
 func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error error) {
-	apihelper.Logger.Printf("%v request body:\n %v", apihelper.GETSEED, r)
+	apihelper.Logger.Printf("%v request body:\n %v", apihelper.GetSeedMethod, r)
 	response, http, err := apihelper.GetClient().InformationApi.GetSeed(nil, r)
-	apihelper.Logger.Printf("%v response statusCode:\n %v", apihelper.GETSEED, http.StatusCode)
-	apihelper.Logger.Printf("%v response id:\n %v", apihelper.GETSEED, response.Id)
-	apihelper.Logger.Printf("%v response body:\n %v", apihelper.GETSEED, response)
-	apihelper.Logger.Printf("%v response Err:\n %v", apihelper.GETSEED, response.Error)
+	apihelper.Logger.Printf("%v response statusCode:\n %v", apihelper.GetSeedMethod, http.StatusCode)
+	apihelper.Logger.Printf("%v response id:\n %v", apihelper.GetSeedMethod, response.Id)
+	apihelper.Logger.Printf("%v response body:\n %v", apihelper.GetSeedMethod, response)
+	apihelper.Logger.Printf("%v response Err:\n %v", apihelper.GetSeedMethod, response.Error)
 	if err != nil {
 		log.Fatalln(err)
 	}
