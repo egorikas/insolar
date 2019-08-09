@@ -6,6 +6,7 @@ import (
 	"github.com/insolar/insolar/testutils"
 	"github.com/stretchr/testify/require"
 	"log"
+	"net/http"
 	"testing"
 )
 
@@ -95,7 +96,8 @@ func TestGetSeedWithBadRequestId(t *testing.T) {
 	data := []casesInt{
 		//{0, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
 		//{-1, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
-		{999000000, error{-32600, "jsonrpc must be 2.0"}},
+		{-2147483648, error{-32600, "jsonrpc must be 2.0"}},
+		{2147483647, error{-32600, "jsonrpc must be 2.0"}},
 	}
 	for _, tc := range data {
 		r := insolar_api.NodeGetSeedRequest{
@@ -107,7 +109,61 @@ func TestGetSeedWithBadRequestId(t *testing.T) {
 	}
 }
 
+func TestGetSeedWithoutRequestId(t *testing.T) { //по умолчанию id = 0 //todo
+	r := insolar_api.NodeGetSeedRequest{
+		Jsonrpc: apihelper.JSONRPCVersion,
+		Method:  apihelper.GETSEED,
+	}
+	getSeedWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
+}
+
+func TestGetSeedWithParams(t *testing.T) {
+	//type any interface{}
+	//var args map[string]any
+	//r := insolar_api.NodeGetSeedRequest{
+	//	Jsonrpc: apihelper.JSONRPCVersion,
+	//	Id:      apihelper.GetRequestId(),
+	//	Method:  apihelper.GETSEED,
+	//	Params:  args,
+	//}
+	//getSeedWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
+}
+
+func TestGetSeedWithTwoRequestId(t *testing.T) {
+	data := []casesInt{
+		{1, error{}},
+		{1, error{-32600, "jsonrpc must be 2.0"}},
+	}
+	r := insolar_api.NodeGetSeedRequest{
+		Jsonrpc: apihelper.JSONRPCVersion,
+		Id:      data[0].input,
+		Method:  apihelper.GETSEED,
+	}
+	getSeedRequest(t, r)
+	r2 := insolar_api.NodeGetSeedRequest{
+		Jsonrpc: apihelper.JSONRPCVersion,
+		Id:      data[1].input,
+		Method:  apihelper.GETSEED,
+	}
+	getSeedWithBadRequest(t, r2, data[1].expectedError) //todo одинаковые id это нормально?
+
+}
 func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error error) {
+	response, http := loggingRequest(r)
+	require.Equal(t, 200, http.StatusCode)
+	require.Empty(t, response.Result)
+	require.Equal(t, error.Message, response.Error.Message)
+	require.Equal(t, int32(error.Code), response.Error.Code)
+}
+func getSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
+	response, http := loggingRequest(r)
+	require.Equal(t, 200, http.StatusCode)
+	require.NotEmpty(t, response.Result)
+	require.Empty(t, response.Error)
+	return response.Result.Seed
+}
+
+func loggingRequest(r insolar_api.NodeGetSeedRequest) (insolar_api.NodeGetSeedResponse, *http.Response) {
 	apihelper.Logger.Printf("%v request body:\n %v", apihelper.GETSEED, r)
 	response, http, err := apihelper.GetClient().InformationApi.GetSeed(nil, r)
 	apihelper.Logger.Printf("%v response statusCode:\n %v", apihelper.GETSEED, http.StatusCode)
@@ -117,8 +173,5 @@ func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error
 	if err != nil {
 		log.Fatalln(err)
 	}
-	require.Equal(t, 200, http.StatusCode)
-	require.Empty(t, response.Result)
-	require.Equal(t, error.Message, response.Error.Message)
-	require.Equal(t, int32(error.Code), response.Error.Code)
+	return response, http
 }
