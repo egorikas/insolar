@@ -46,7 +46,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 		},
 	}
 	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
-	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, "", "", body) //todo подпись
+	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, body)
 	require.Nil(t, err)
 	CheckResponseHasNoError(t, response)
 	apilogger.LogApiResponse(http, response)

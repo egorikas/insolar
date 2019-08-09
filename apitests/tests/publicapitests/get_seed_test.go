@@ -41,14 +41,6 @@ func TestGetSeedWithBadMethod(t *testing.T) {
 	}
 }
 
-func TestGetSeedWithoutMethod(t *testing.T) {
-	r := insolar_api.NodeGetSeedRequest{
-		Jsonrpc: apihelper.JSONRPCVersion,
-		Id:      apihelper.GetRequestId(),
-	}
-	getSeedWithBadRequest(t, r, tests.TestError{-32000, "rpc: service/method request ill-formed: \"\""}) //todo bug - need error: "method name is required"
-}
-
 func TestGetSeedWithBadJsonVersion(t *testing.T) {
 	randomString := testutils.RandomString()
 	data := []tests.Cases{
@@ -70,69 +62,27 @@ func TestGetSeedWithBadJsonVersion(t *testing.T) {
 	}
 }
 
-func TestGetSeedWithoutJsonField(t *testing.T) {
-	r := insolar_api.NodeGetSeedRequest{
-		Id:     apihelper.GetRequestId(),
-		Method: apihelper.GetSeedMethod,
-	}
-	getSeedWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
-}
-
 func TestGetSeedWithBadRequestId(t *testing.T) {
-	data := []tests.CasesInt{
-		//{0, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
-		//{-1, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
-		{-2147483648, tests.TestError{-32600, "jsonrpc must be 2.0"}},
-		{2147483647, tests.TestError{-32600, "jsonrpc must be 2.0"}},
-	}
-	for _, tc := range data {
+	data := []int32{0, -1, -2147483648, 2147483647}
+
+	for _, v := range data {
 		r := insolar_api.NodeGetSeedRequest{
 			Jsonrpc: apihelper.JSONRPCVersion,
-			Id:      tc.Input,
+			Id:      v,
 			Method:  apihelper.GetSeedMethod,
 		}
-		getSeedWithBadRequest(t, r, tc.ExpectedError)
+		getSeedRequest(t, r)
 	}
-}
-
-func TestGetSeedWithoutRequestId(t *testing.T) { //по умолчанию id = 0 //todo
-	r := insolar_api.NodeGetSeedRequest{
-		Jsonrpc: apihelper.JSONRPCVersion,
-		Method:  apihelper.GetSeedMethod,
-	}
-	getSeedWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
-}
-
-func TestGetSeedWithParams(t *testing.T) {
-	//type any interface{}
-	//var args map[string]any
-	//r := insolar_api.NodeGetSeedRequest{
-	//	Jsonrpc: apihelper.JSONRPCVersion,
-	//	Id:      apihelper.GetRequestId(),
-	//	Method:  apihelper.GetInfoMethod,
-	//	Params:  args,
-	//}
-	//getSeedWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
 }
 
 func TestGetSeedWithTwoRequestId(t *testing.T) {
-	data := []tests.CasesInt{
-		{1, tests.TestError{}},
-		{1, tests.TestError{-32600, "jsonrpc must be 2.0"}},
-	}
 	r := insolar_api.NodeGetSeedRequest{
 		Jsonrpc: apihelper.JSONRPCVersion,
-		Id:      data[0].Input,
+		Id:      1,
 		Method:  apihelper.GetSeedMethod,
 	}
 	getSeedRequest(t, r)
-	r2 := insolar_api.NodeGetSeedRequest{
-		Jsonrpc: apihelper.JSONRPCVersion,
-		Id:      data[1].Input,
-		Method:  apihelper.GetSeedMethod,
-	}
-	getSeedWithBadRequest(t, r2, data[1].ExpectedError) //todo одинаковые id это нормально?
-
+	getSeedRequest(t, r)
 }
 func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error tests.TestError) {
 	response, http := loggingGetSeedRequest(t, r)

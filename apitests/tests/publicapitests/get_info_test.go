@@ -44,14 +44,6 @@ func TestGetInfoWithBadMethod(t *testing.T) {
 	}
 }
 
-func TestGetInfoWithoutMethod(t *testing.T) {
-	r := insolar_api.NetworkGetInfoRequest{
-		Jsonrpc: apihelper.JSONRPCVersion,
-		Id:      apihelper.GetRequestId(),
-	}
-	getInfoWithBadRequest(t, r, tests.TestError{-32000, "rpc: service/method request ill-formed: \"\""}) //todo bug - need error: "method name is required"
-}
-
 func TestGetInfoWithBadJsonVersion(t *testing.T) {
 	randomString := testutils.RandomString()
 	data := []tests.Cases{
@@ -73,69 +65,27 @@ func TestGetInfoWithBadJsonVersion(t *testing.T) {
 	}
 }
 
-func TestGetInfoWithoutJsonField(t *testing.T) {
-	r := insolar_api.NetworkGetInfoRequest{
-		Id:     apihelper.GetRequestId(),
-		Method: apihelper.GetInfoMethod,
-	}
-	getInfoWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
-}
-
 func TestGetInfoWithBadRequestId(t *testing.T) {
-	data := []tests.CasesInt{
-		//{0, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
-		//{-1, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
-		{-2147483648, tests.TestError{-32600, "jsonrpc must be 2.0"}},
-		{2147483647, tests.TestError{-32600, "jsonrpc must be 2.0"}},
-	}
-	for _, tc := range data {
+	data := []int32{0, -1, -2147483648, 2147483647}
+
+	for _, v := range data {
 		r := insolar_api.NetworkGetInfoRequest{
 			Jsonrpc: apihelper.JSONRPCVersion,
-			Id:      tc.Input,
+			Id:      v,
 			Method:  apihelper.GetInfoMethod,
 		}
-		getInfoWithBadRequest(t, r, tc.ExpectedError)
+		getInfoRequest(t, r)
 	}
-}
-
-func TestGetInfoWithoutRequestId(t *testing.T) { //по умолчанию id = 0 //todo
-	r := insolar_api.NetworkGetInfoRequest{
-		Jsonrpc: apihelper.JSONRPCVersion,
-		Method:  apihelper.GetInfoMethod,
-	}
-	getInfoWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
-}
-
-func TestGetInfoWithParams(t *testing.T) {
-	//type any interface{}
-	//var args map[string]any
-	//r := insolar_api.NetworkGetInfoRequest{
-	//	Jsonrpc: apihelper.JSONRPCVersion,
-	//	Id:      apihelper.GetRequestId(),
-	//	Method:  apihelper.GetInfoMethod,
-	//	Params:  args,
-	//}
-	//getInfoWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
 }
 
 func TestGetInfoWithTwoRequestId(t *testing.T) {
-	data := []tests.CasesInt{
-		{1, tests.TestError{}},
-		{1, tests.TestError{-32600, "jsonrpc must be 2.0"}},
-	}
 	r := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: apihelper.JSONRPCVersion,
-		Id:      data[0].Input,
+		Id:      1,
 		Method:  apihelper.GetInfoMethod,
 	}
 	getInfoRequest(t, r)
-	r2 := insolar_api.NetworkGetInfoRequest{
-		Jsonrpc: apihelper.JSONRPCVersion,
-		Id:      data[1].Input,
-		Method:  apihelper.GetInfoMethod,
-	}
-	getInfoWithBadRequest(t, r2, data[1].ExpectedError) //todo одинаковые id это нормально?
-
+	getInfoRequest(t, r)
 }
 func getInfoWithBadRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest, error tests.TestError) {
 	response, http := loggingGetInfoRequest(t, r)
