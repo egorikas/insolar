@@ -22,6 +22,12 @@ do
 
   package=$(echo ${repo_name} | tr '-' '_')
   output_dir=${SPEC_BASE_DIR}/${package}
+
+  # save tmp yaml file
+  if [[ -f ${repo_dir}/api-exported.yaml ]]; then
+      cp ${repo_dir}/api-exported.yaml ${WORKDIR}/api-exported_old.yaml
+  fi
+
   rm -rf ${output_dir}
   openapi-generator generate \
       --input-spec api-exported.yaml \
@@ -30,6 +36,14 @@ do
       --package-name ${package} \
       --skip-validate-spec
 
-  cp ${repo_dir}/api-exported.yaml ${WORKDIR}/
+  # copy src api spec
+  cp ${repo_dir}/api-exported.yaml ${WORKDIR}/${package}/
+
+  # copy old yaml
+  if [[ -f ${WORKDIR}/api-exported_old.yaml ]]; then
+      cp ${WORKDIR}/api-exported_old.yaml ${WORKDIR}/${package}/
+      rm ${WORKDIR}/api-exported_old.yaml
+  fi
+
   cd ${WORKDIR} || exit
 done
