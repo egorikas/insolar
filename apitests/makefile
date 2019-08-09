@@ -7,6 +7,10 @@ all: codegen-latest tests ## run api tests
 tests: ## run api tests
 	go test ./tests -count=$(TEST_COUNT)
 
+.PHONY: smoke
+smoke: ## run api smoke tests
+	go test ./tests/smoke -count=$(TEST_COUNT)
+
 .PHONY: codegen-latest
 codegen-latest: pull codegen ## generate api client from latet repo state
 

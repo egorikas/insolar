@@ -11,14 +11,6 @@ import (
 	"testing"
 )
 
-func TestGetInfo(t *testing.T) {
-	response := apihelper.GetInfo(t)
-	require.NotEmpty(t, response.RootDomain)
-	require.NotEmpty(t, response.RootMember)
-	require.NotEmpty(t, response.NodeDomain)
-	require.NotEmpty(t, response.TraceID)
-}
-
 func TestGetInfoWithBadMethod(t *testing.T) {
 	randomString := testutils.RandomString()
 	data := []tests.Cases{

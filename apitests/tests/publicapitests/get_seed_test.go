@@ -11,11 +11,6 @@ import (
 	"testing"
 )
 
-func TestGetSeed(t *testing.T) {
-	seed := apihelper.GetSeed(t)
-	require.NotEmpty(t, seed)
-}
-
 func TestGetSeedWithBadMethod(t *testing.T) {
 	randomString := testutils.RandomString()
 	data := []tests.Cases{
