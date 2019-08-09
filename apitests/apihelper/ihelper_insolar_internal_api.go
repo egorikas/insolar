@@ -2,8 +2,9 @@ package apihelper
 
 import (
 	"github.com/insolar/insolar/apitests/apiclient/insolar_internal_api"
+	"github.com/insolar/insolar/apitests/apihelper/apilogger"
 	uuid "github.com/satori/go.uuid"
-	"log"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -33,7 +34,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 	body := insolar_internal_api.MigrationAddAddressesRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  CONTRACTCALL,
+		Method:  ContractCall,
 		Params: insolar_internal_api.MigrationAddAddressesRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: MIGRATIONADDADDRESSES,
@@ -41,41 +42,32 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 				MigrationAddresses: []string{uuids.String()},
 			},
 			PublicKey: adminPub,
-			Reference: getMigrationAdmin(),
+			Reference: getMigrationAdmin(t),
 		},
 	}
-	Logger.Printf("%v request body:\n %v", MIGRATIONADDADDRESSES, body)
-	response, _, err := internalMigrationApi.AddMigrationAddresses(nil, "", "", body) //todo подпись
-	checkResponseHasNoError(t, response)
-	Logger.Printf("%v response statusCode:\n %v", MIGRATIONADDADDRESSES, response.Error.Code)
-	Logger.Printf("%v response id:\n %v", MIGRATIONADDADDRESSES, response.Id)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	Logger.Printf("%v response.Result: \n %v", MIGRATIONADDADDRESSES, response.Result)
-	Logger.Printf("%v response.error: \n %v", MIGRATIONADDADDRESSES, response.Error)
+	apilogger.LogApiRequest(MIGRATIONADDADDRESSES, body, nil)
+	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, body) //todo подпись
+	require.Nil(t, err)
+	CheckResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	apilogger.Printf("response id: %d", response.Id)
 	return response
 }
 
-func GetMigrationInfo() insolar_internal_api.MigrationGetInfoResponse {
-	request := insolar_internal_api.MigrationGetInfoRequest{
+func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoResponse {
+	body := insolar_internal_api.MigrationGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
 		Method:  MIGRATIONGETINFO,
 		Params:  nil,
 	}
-	Logger.Printf("%v request body:\n %v", MIGRATIONGETINFO, request)
-	response, i, e := internalMigrationApi.GetInfo(nil, request)
-	Logger.Printf("%v response statusCode:\n %v", MIGRATIONGETINFO, i.StatusCode)
-	Logger.Printf("%v response body.Id:\n %v", MIGRATIONGETINFO, response.Id)
-	Logger.Printf("%v response body.Result:\n %v", MIGRATIONGETINFO, response.Result)
-	Logger.Printf("%v response body.Error:\n %v", MIGRATIONGETINFO, response.Error)
-	if e != nil {
-		log.Fatalln(e)
-	}
+	apilogger.LogApiRequest(MIGRATIONGETINFO, body, nil)
+	response, http, err := internalMigrationApi.GetInfo(nil, body)
+	require.Nil(t, err)
+	apilogger.LogApiResponse(http, response)
 	return response
 }
 
-func getMigrationAdmin() string {
-	return GetMigrationInfo().Result.MigrationAdminMember
+func getMigrationAdmin(t *testing.T) string {
+	return GetMigrationInfo(t).Result.MigrationAdminMember
 }

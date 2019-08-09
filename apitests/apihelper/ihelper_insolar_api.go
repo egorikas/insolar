@@ -2,9 +2,9 @@ package apihelper
 
 import (
 	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
+	"github.com/insolar/insolar/apitests/apihelper/apilogger"
 	"github.com/stretchr/testify/require"
 	"log"
-	"os"
 	"testing"
 )
 
@@ -13,21 +13,21 @@ var id int32 = 0
 const (
 	url            = "http://localhost:19101"
 	JSONRPCVersion = "2.0"
-	APICALL        = "api.call"
-	CONTRACTCALL   = "contract.call"
+	ApiCall        = "api.call"
+	ContractCall   = "contract.call"
 	//information_api
-	GETSEED   = "node.getSeed"
-	GETINFO   = "network.getInfo"
-	GETSTATUS = "node.getStatus"
+	GetSeedMethod   = "node.getSeed"
+	GetInfoMethod   = "network.getInfo"
+	GetStatusMethod = "node.getStatus"
 	//member_api
-	MEMBERCREATE   = "member.create"
-	MEMBERTRANSFER = "member.transfer"
+	MemberCreateMethod   = "member.create"
+	MemberTransferMethod = "member.transfer"
+	MemberGetMethod      = "member.get"
 	//migration_api
-	MEMBERMIGRATIONCREATE = "member.migrationCreate"
-	DEPOSITTRANSFER       = "deposit.transfer"
+	MemberMigrationCreateMethod = "member.migrationCreate"
+	DepositTransferMethod       = "deposit.transfer"
 )
 
-var Logger = log.New(os.Stdout, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
 var informationApi = GetClient().InformationApi
 var memberApi = GetClient().MemberApi
 var migrationApi = GetClient().MigrationApi
@@ -48,20 +48,17 @@ func GetSeed(t *testing.T) string {
 	r := insolar_api.NodeGetSeedRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  GETSEED,
+		Method:  GetSeedMethod,
 	}
 	return GetSeedRequest(t, r)
 }
 
 func GetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
-	Logger.Printf("%v request body:\n %v", GETSEED, r)
+	apilogger.LogApiRequest(GetSeedMethod, r, nil)
 	response, http, err := informationApi.GetSeed(nil, r)
-	checkResponseHasNoError(t, response)
 	require.Nil(t, err)
-	Logger.Printf("%v response statusCode:\n %v", GETSEED, http.StatusCode)
-	Logger.Printf("%v response id:\n %v", GETSEED, response.Id)
-	Logger.Printf("%v response body:\n %v", GETSEED, response)
-	Logger.Printf("%v response Err:\n %v", GETSEED, response.Error)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 	return response.Result.Seed
 }
 
@@ -69,29 +66,30 @@ func GetInfo(t *testing.T) insolar_api.NetworkGetInfoResponseResult {
 	infoBody := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  GETINFO,
+		Method:  GetInfoMethod,
 		Params:  nil,
 	}
-	response, _, err := informationApi.GetInfo(nil, infoBody)
-	if err != nil {
-		Logger.Fatalln(err)
-	}
-	Logger.Println("Get info result: ok")
-	checkResponseHasNoError(t, response)
+	apilogger.LogApiRequest(GetInfoMethod, infoBody, nil)
+	response, http, err := informationApi.GetInfo(nil, infoBody)
+	require.Nil(t, err)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 
 	return response.Result
 }
 
 func GetStatus(t *testing.T) insolar_api.NodeGetStatusResponseResult {
-	infoBody := insolar_api.NodeGetStatusRequest{
+	body := insolar_api.NodeGetStatusRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  GETSTATUS,
+		Method:  GetStatusMethod,
 		Params:  nil,
 	}
-	response, _, err := informationApi.GetStatus(nil, infoBody)
+	apilogger.LogApiRequest(GetStatusMethod, body, nil)
+	response, http, err := informationApi.GetStatus(nil, body)
 	require.Nil(t, err)
-	checkResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 
 	return response.Result
 }
@@ -108,18 +106,20 @@ func CreateMember(t *testing.T) MemberObject {
 	request := insolar_api.MemberCreateRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  APICALL,
+		Method:  ApiCall,
 		Params: insolar_api.MemberCreateRequestParams{
 			Seed:      seed,
-			CallSite:  MEMBERCREATE,
+			CallSite:  MemberCreateMethod,
 			PublicKey: string(ms.PemPublicKey),
 		},
 	}
-	d, s := sign(request, ms.PrivateKey)
-	response, _, err := memberApi.MemberCreate(nil, d, s, request)
+	d, s, m := sign(request, ms.PrivateKey)
+	apilogger.LogApiRequest(MemberCreateMethod, request, m)
+	response, http, err := memberApi.MemberCreate(nil, d, s, request)
 	require.Nil(t, err)
-	checkResponseHasNoError(t, response)
-	Logger.Printf("Member created: %v", response.Result.CallResult.Reference)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
+	apilogger.Println("Member created: " + response.Result.CallResult.Reference)
 	return MemberObject{
 		MemberReference:      response.Result.CallResult.Reference,
 		Signature:            ms,
@@ -127,47 +127,52 @@ func CreateMember(t *testing.T) MemberObject {
 	}
 }
 
-func (m *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetResponse {
+func (member *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetResponse {
 	seed := GetSeed(t)
 	request := insolar_api.MemberGetRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  APICALL,
+		Method:  ApiCall,
 		Params: insolar_api.MemberGetRequestParams{
 			Seed:       seed,
-			CallSite:   "member.get",
+			CallSite:   MemberGetMethod,
 			CallParams: nil,
-			PublicKey:  string(m.Signature.PemPublicKey),
+			PublicKey:  string(member.Signature.PemPublicKey),
 		},
 	}
-	d, s := sign(request, m.Signature.PrivateKey)
-	response, _, err := memberApi.MemberGet(nil, d, s, request)
+	d, s, m := sign(request, member.Signature.PrivateKey)
+	apilogger.LogApiRequest(MemberGetMethod, request, m)
+	response, http, err := memberApi.MemberGet(nil, d, s, request)
 	require.Nil(t, err)
-	checkResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 	return response
 }
 
-func (m *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) insolar_api.MemberTransferResponse {
+func (member *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) insolar_api.MemberTransferResponse {
 	seed := GetSeed(t)
 	request := insolar_api.MemberTransferRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  APICALL,
+		Method:  ApiCall,
 		Params: insolar_api.MemberTransferRequestParams{
 			Seed:     seed,
-			CallSite: MEMBERTRANSFER,
+			CallSite: MemberTransferMethod,
 			CallParams: insolar_api.MemberTransferRequestParamsCallParams{
 				Amount:            amount,
 				ToMemberReference: toMemberRef,
 			},
-			PublicKey: string(m.Signature.PemPublicKey),
-			Reference: m.MemberResponseResult.Result.CallResult.Reference,
+			PublicKey: string(member.Signature.PemPublicKey),
+			Reference: member.MemberResponseResult.Result.CallResult.Reference,
 		},
 	}
-	d, s := sign(request, m.Signature.PrivateKey)
-	response, _, err := memberApi.MemberTransfer(nil, d, s, request)
+	d, s, m := sign(request, member.Signature.PrivateKey)
+	apilogger.LogApiRequest(MemberTransferMethod, request, m)
+	response, http, err := memberApi.MemberTransfer(nil, d, s, request)
 	require.Nil(t, err)
-	checkResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
+	apilogger.Println("Transfer OK. Fee: " + response.Result.CallResult.Fee)
 	return response
 }
 
@@ -179,27 +184,22 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	request := insolar_api.MemberMigrationCreateRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      1,
-		Method:  APICALL,
+		Method:  ApiCall,
 		Params: insolar_api.MemberMigrationCreateRequestParams{
 			Seed:       seed,
-			CallSite:   MEMBERMIGRATIONCREATE,
+			CallSite:   MemberMigrationCreateMethod,
 			CallParams: nil,
 			PublicKey:  string(ms.PemPublicKey),
 		},
 	}
-	//json.Marshal(request)
-
-	d, s := sign(request, ms.PrivateKey)
-	Logger.Printf("%v request body:\n %v", MEMBERMIGRATIONCREATE, request)
+	d, s, m := sign(request, ms.PrivateKey)
+	apilogger.LogApiRequest(MemberMigrationCreateMethod, request, m)
 	response, http, err := migrationApi.MemberMigrationCreate(nil, d, s, request)
-	Logger.Printf("%v response body:\n %v", MEMBERMIGRATIONCREATE, response)
-	Logger.Printf("%v response Status:\n %v", MEMBERMIGRATIONCREATE, http.StatusCode)
-	checkResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// Put your reference into a variable to form a transfer request next:
-	//memberReference := member.Result.CallResult.Reference
 
 	return MemberObject{
 		MemberReference: response.Result.CallResult.Reference,
@@ -233,10 +233,10 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse {
 	request := insolar_api.DepositTransferRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      1,
-		Method:  APICALL,
+		Method:  ApiCall,
 		Params: insolar_api.DepositTransferRequestParams{
 			Seed:     GetSeed(t),
-			CallSite: DEPOSITTRANSFER,
+			CallSite: DepositTransferMethod,
 			CallParams: insolar_api.DepositTransferRequestParamsCallParams{
 				Amount:    "1000",
 				EthTxHash: "",
@@ -245,12 +245,11 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse {
 		},
 	}
 
-	d, s := sign(request, ms.PrivateKey)
-	Logger.Printf("%v request body:\n %v", DEPOSITTRANSFER, request)
+	d, s, m := sign(request, ms.PrivateKey)
+	apilogger.LogApiRequest(DepositTransferMethod, request, m)
 	response, http, err := migrationApi.DepositTransfer(nil, d, s, request)
-	Logger.Printf("%v response body:\n %v", DEPOSITTRANSFER, response)
-	Logger.Printf("%v response Status:\n %v", DEPOSITTRANSFER, http.StatusCode)
-	checkResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 	if err != nil {
 		log.Fatalln(err)
 	}
