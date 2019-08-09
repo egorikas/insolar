@@ -137,9 +137,9 @@ func TestGetSeedWithTwoRequestId(t *testing.T) {
 func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error tests.TestError) {
 	response, http := loggingGetSeedRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
-	require.Empty(t, response.Result)
 	require.Equal(t, error.Message, response.Error.Message)
 	require.Equal(t, int32(error.Code), response.Error.Code)
+	require.Empty(t, response.Result)
 }
 func getSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
 	response, http := loggingGetSeedRequest(t, r)

@@ -140,14 +140,17 @@ func TestGetInfoWithTwoRequestId(t *testing.T) {
 func getInfoWithBadRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest, error tests.TestError) {
 	response, http := loggingGetInfoRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
-	require.Empty(t, response.Result)
 	require.Equal(t, error.Message, response.Error.Message)
 	require.Equal(t, int32(error.Code), response.Error.Code)
+	require.Empty(t, response.Result)
 }
 func getInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) insolar_api.NetworkGetInfoResponseResult {
 	response, http := loggingGetInfoRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
-	require.NotEmpty(t, response.Result)
+	require.NotEmpty(t, response.Result.TraceID)
+	require.NotEmpty(t, response.Result.RootMember)
+	require.NotEmpty(t, response.Result.RootDomain)
+	require.NotEmpty(t, response.Result.NodeDomain)
 	require.Empty(t, response.Error)
 	return response.Result
 }

@@ -10,8 +10,8 @@ import (
 
 const (
 	//migration_api
-	MIGRATIONADDADDRESSES = "migration.addAddresses"
-	MIGRATIONGETINFO      = "migration.getInfo"
+	MigrationAddAddresses = "migration.addAddresses"
+	MigrationGetInfo      = "migration.getInfo"
 )
 
 var internalMemberApi = getInternalClient().MemberApi
@@ -37,7 +37,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 		Method:  ContractCall,
 		Params: insolar_internal_api.MigrationAddAddressesRequestParams{
 			Seed:     GetSeed(t),
-			CallSite: MIGRATIONADDADDRESSES,
+			CallSite: MigrationAddAddresses,
 			CallParams: insolar_internal_api.MigrationAddAddressesRequestParamsCallParams{
 				MigrationAddresses: []string{uuids.String()},
 			},
@@ -45,7 +45,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 			Reference: getMigrationAdmin(t),
 		},
 	}
-	apilogger.LogApiRequest(MIGRATIONADDADDRESSES, body, nil)
+	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
 	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, "", "", body) //todo подпись
 	require.Nil(t, err)
 	CheckResponseHasNoError(t, response)
@@ -58,10 +58,10 @@ func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoRespons
 	body := insolar_internal_api.MigrationGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  MIGRATIONGETINFO,
+		Method:  MigrationGetInfo,
 		Params:  nil,
 	}
-	apilogger.LogApiRequest(MIGRATIONGETINFO, body, nil)
+	apilogger.LogApiRequest(MigrationGetInfo, body, nil)
 	response, http, err := internalMigrationApi.GetInfo(nil, body)
 	require.Nil(t, err)
 	apilogger.LogApiResponse(http, response)
