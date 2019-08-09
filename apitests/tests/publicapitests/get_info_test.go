@@ -11,12 +11,15 @@ import (
 	"testing"
 )
 
-func TestGetSeed(t *testing.T) {
-	seed := apihelper.GetSeed(t)
-	require.NotEmpty(t, seed)
+func TestGetInfo(t *testing.T) {
+	response := apihelper.GetInfo(t)
+	require.NotEmpty(t, response.RootDomain)
+	require.NotEmpty(t, response.RootMember)
+	require.NotEmpty(t, response.NodeDomain)
+	require.NotEmpty(t, response.TraceID)
 }
 
-func TestGetSeedWithBadMethod(t *testing.T) {
+func TestGetInfoWithBadMethod(t *testing.T) {
 	randomString := testutils.RandomString()
 	data := []tests.Cases{
 		{"", tests.TestError{-32000, "rpc: service/method request ill-formed: \"\""}},
@@ -24,32 +27,32 @@ func TestGetSeedWithBadMethod(t *testing.T) {
 		{"node.getInfo", tests.TestError{-32000, "rpc: can't find method \"node.getInfo\""}},
 		{randomString, tests.TestError{-32000, "rpc: service/method request ill-formed: \"" + randomString + "\""}},
 		{"1111", tests.TestError{-32000, "rpc: service/method request ill-formed: \"1111\""}},
-		{"node getSeed", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node getSeed\""}},
-		{"node^getSeed", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node^getSeed\""}},
-		{"node*getSeed", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node*getSeed\""}},
-		{"node&getSeed", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node&getSeed\""}},
-		{"node%getSeed", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node%getSeed\""}},
-		{"getSeed", tests.TestError{-32000, "rpc: service/method request ill-formed: \"getSeed\""}},
+		{"node getInfo", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node getInfo\""}},
+		{"node^getInfo", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node^getInfo\""}},
+		{"node*getInfo", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node*getInfo\""}},
+		{"node&getInfo", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node&getInfo\""}},
+		{"node%getInfo", tests.TestError{-32000, "rpc: service/method request ill-formed: \"node%getInfo\""}},
+		{"getInfo", tests.TestError{-32000, "rpc: service/method request ill-formed: \"getInfo\""}},
 	}
 	for _, tc := range data {
-		r := insolar_api.NodeGetSeedRequest{
+		r := insolar_api.NetworkGetInfoRequest{
 			Jsonrpc: apihelper.JSONRPCVersion,
 			Id:      apihelper.GetRequestId(),
 			Method:  tc.Input,
 		}
-		getSeedWithBadRequest(t, r, tc.ExpectedError)
+		getInfoWithBadRequest(t, r, tc.ExpectedError)
 	}
 }
 
-func TestGetSeedWithoutMethod(t *testing.T) {
-	r := insolar_api.NodeGetSeedRequest{
+func TestGetInfoWithoutMethod(t *testing.T) {
+	r := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: apihelper.JSONRPCVersion,
 		Id:      apihelper.GetRequestId(),
 	}
-	getSeedWithBadRequest(t, r, tests.TestError{-32000, "rpc: service/method request ill-formed: \"\""}) //todo bug - need error: "method name is required"
+	getInfoWithBadRequest(t, r, tests.TestError{-32000, "rpc: service/method request ill-formed: \"\""}) //todo bug - need error: "method name is required"
 }
 
-func TestGetSeedWithBadJsonVersion(t *testing.T) {
+func TestGetInfoWithBadJsonVersion(t *testing.T) {
 	randomString := testutils.RandomString()
 	data := []tests.Cases{
 		{"1.0", tests.TestError{-32600, "jsonrpc must be 2.0"}},
@@ -61,24 +64,24 @@ func TestGetSeedWithBadJsonVersion(t *testing.T) {
 		{"3.0", tests.TestError{-32600, "jsonrpc must be 2.0"}},
 	}
 	for _, tc := range data {
-		r := insolar_api.NodeGetSeedRequest{
+		r := insolar_api.NetworkGetInfoRequest{
 			Jsonrpc: tc.Input,
 			Id:      apihelper.GetRequestId(),
-			Method:  apihelper.GetSeedMethod,
+			Method:  apihelper.GetInfoMethod,
 		}
-		getSeedWithBadRequest(t, r, tc.ExpectedError)
+		getInfoWithBadRequest(t, r, tc.ExpectedError)
 	}
 }
 
-func TestGetSeedWithoutJsonField(t *testing.T) {
-	r := insolar_api.NodeGetSeedRequest{
+func TestGetInfoWithoutJsonField(t *testing.T) {
+	r := insolar_api.NetworkGetInfoRequest{
 		Id:     apihelper.GetRequestId(),
-		Method: apihelper.GetSeedMethod,
+		Method: apihelper.GetInfoMethod,
 	}
-	getSeedWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
+	getInfoWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
 }
 
-func TestGetSeedWithBadRequestId(t *testing.T) {
+func TestGetInfoWithBadRequestId(t *testing.T) {
 	data := []tests.CasesInt{
 		//{0, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
 		//{-1, error{-32600,"jsonrpc must be 2.0"},},//todo какие требования к id?
@@ -86,72 +89,72 @@ func TestGetSeedWithBadRequestId(t *testing.T) {
 		{2147483647, tests.TestError{-32600, "jsonrpc must be 2.0"}},
 	}
 	for _, tc := range data {
-		r := insolar_api.NodeGetSeedRequest{
+		r := insolar_api.NetworkGetInfoRequest{
 			Jsonrpc: apihelper.JSONRPCVersion,
 			Id:      tc.Input,
-			Method:  apihelper.GetSeedMethod,
+			Method:  apihelper.GetInfoMethod,
 		}
-		getSeedWithBadRequest(t, r, tc.ExpectedError)
+		getInfoWithBadRequest(t, r, tc.ExpectedError)
 	}
 }
 
-func TestGetSeedWithoutRequestId(t *testing.T) { //по умолчанию id = 0 //todo
-	r := insolar_api.NodeGetSeedRequest{
+func TestGetInfoWithoutRequestId(t *testing.T) { //по умолчанию id = 0 //todo
+	r := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: apihelper.JSONRPCVersion,
-		Method:  apihelper.GetSeedMethod,
+		Method:  apihelper.GetInfoMethod,
 	}
-	getSeedWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
+	getInfoWithBadRequest(t, r, tests.TestError{-32600, "jsonrpc must be 2.0"})
 }
 
-func TestGetSeedWithParams(t *testing.T) {
+func TestGetInfoWithParams(t *testing.T) {
 	//type any interface{}
 	//var args map[string]any
-	//r := insolar_api.NodeGetSeedRequest{
+	//r := insolar_api.NetworkGetInfoRequest{
 	//	Jsonrpc: apihelper.JSONRPCVersion,
 	//	Id:      apihelper.GetRequestId(),
 	//	Method:  apihelper.GetInfoMethod,
 	//	Params:  args,
 	//}
-	//getSeedWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
+	//getInfoWithBadRequest(t, r, error{-32600, "jsonrpc must be 2.0"})
 }
 
-func TestGetSeedWithTwoRequestId(t *testing.T) {
+func TestGetInfoWithTwoRequestId(t *testing.T) {
 	data := []tests.CasesInt{
 		{1, tests.TestError{}},
 		{1, tests.TestError{-32600, "jsonrpc must be 2.0"}},
 	}
-	r := insolar_api.NodeGetSeedRequest{
+	r := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: apihelper.JSONRPCVersion,
 		Id:      data[0].Input,
-		Method:  apihelper.GetSeedMethod,
+		Method:  apihelper.GetInfoMethod,
 	}
-	getSeedRequest(t, r)
-	r2 := insolar_api.NodeGetSeedRequest{
+	getInfoRequest(t, r)
+	r2 := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: apihelper.JSONRPCVersion,
 		Id:      data[1].Input,
-		Method:  apihelper.GetSeedMethod,
+		Method:  apihelper.GetInfoMethod,
 	}
-	getSeedWithBadRequest(t, r2, data[1].ExpectedError) //todo одинаковые id это нормально?
+	getInfoWithBadRequest(t, r2, data[1].ExpectedError) //todo одинаковые id это нормально?
 
 }
-func getSeedWithBadRequest(t *testing.T, r insolar_api.NodeGetSeedRequest, error tests.TestError) {
-	response, http := loggingGetSeedRequest(t, r)
+func getInfoWithBadRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest, error tests.TestError) {
+	response, http := loggingGetInfoRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
 	require.Empty(t, response.Result)
 	require.Equal(t, error.Message, response.Error.Message)
 	require.Equal(t, int32(error.Code), response.Error.Code)
 }
-func getSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
-	response, http := loggingGetSeedRequest(t, r)
+func getInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) insolar_api.NetworkGetInfoResponseResult {
+	response, http := loggingGetInfoRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
 	require.NotEmpty(t, response.Result)
 	require.Empty(t, response.Error)
-	return response.Result.Seed
+	return response.Result
 }
 
-func loggingGetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) (insolar_api.NodeGetSeedResponse, *http.Response) {
+func loggingGetInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) (insolar_api.NetworkGetInfoResponse, *http.Response) {
 	apilogger.LogApiRequest(r.Method, r, nil)
-	response, http, err := apihelper.GetClient().InformationApi.GetSeed(nil, r)
+	response, http, err := apihelper.GetClient().InformationApi.GetInfo(nil, r)
 	require.Nil(t, err)
 	apilogger.LogApiResponse(http, response)
 	return response, http
