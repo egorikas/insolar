@@ -23,7 +23,16 @@ func TestGetSeed(t *testing.T) {
 
 func TestGetStatus(t *testing.T) {
 	response := apihelper.GetStatus(t)
+
+	require.Equal(t, "CompleteNetworkState", response.NetworkState)
 	require.NotEmpty(t, response.ActiveListSize)
+	require.NotEmpty(t, response.Entropy)
+	for _, v := range response.Nodes {
+		require.Equal(t, "true", v.IsWorking)
+	}
+	require.Equal(t, "true", response.Origin.IsWorking)
+	require.NotEmpty(t, response.PulseNumber)
+	require.NotEmpty(t, response.Version)
 }
 
 // Member api

@@ -25,11 +25,12 @@ func getInternalClient() *insolar_internal_api.APIClient {
 }
 
 func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivateDaemonResponse {
+	ms, _ := NewMemberSignature()
 	uuids, err := uuid.NewV4()
 	if err != nil {
 		panic(err)
 	}
-	adminPub, _ := LoadAdminMemberKeys()
+	adminPub, _ := LoadAdminMemberKeys() //todo не правильная подпись
 
 	body := insolar_internal_api.MigrationAddAddressesRequest{
 		Jsonrpc: JSONRPCVersion,
@@ -45,8 +46,9 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 			Reference: getMigrationAdmin(t),
 		},
 	}
-	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
-	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, body)
+	d, s, m := sign(body, ms.PrivateKey)
+	apilogger.LogApiRequest(MigrationAddAddresses, body, m)
+	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, d, s, body)
 	require.Nil(t, err)
 	CheckResponseHasNoError(t, response)
 	apilogger.LogApiResponse(http, response)
@@ -65,6 +67,7 @@ func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoRespons
 	response, http, err := internalMigrationApi.GetInfo(nil, body)
 	require.Nil(t, err)
 	apilogger.LogApiResponse(http, response)
+	require.NotEmpty(t, response.Result.MigrationAdminMember)
 	return response
 }
 
