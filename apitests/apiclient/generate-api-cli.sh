@@ -17,7 +17,13 @@ do
   fi
 	cd ${repo_dir} || exit
 
-	npm install
+#	npm install
+
+	# check and install api-tools@latest
+	if [[ $(npm outdated | grep @insolar/api-tools) != "" ]]; then
+	    npm install @insolar/api-tools@latest --save
+	fi
+
   npm run export -- --collapse
 
   package=$(echo ${repo_name} | tr '-' '_')
@@ -28,6 +34,7 @@ do
       cp ${repo_dir}/api-exported.yaml ${WORKDIR}/api-exported_old.yaml
   fi
 
+  # generate golang code
   rm -rf ${output_dir}
   openapi-generator generate \
       --input-spec api-exported.yaml \
