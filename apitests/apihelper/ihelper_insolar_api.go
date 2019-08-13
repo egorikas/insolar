@@ -11,10 +11,10 @@ import (
 var id int32 = 0
 
 const (
-	url            = "http://localhost:19101"
+	url            = "http://localhost:19102"
 	JSONRPCVersion = "2.0"
 	ApiCall        = "api.call"
-	ContractCall   = "contract.call"
+	//ContractCall   = "contract.call"
 	//information_api
 	GetSeedMethod   = "node.getSeed"
 	GetInfoMethod   = "network.getInfo"

@@ -118,6 +118,7 @@ func LoadAdminMemberKeys() (string, string) {
 	}
 	privateKey := data["private_key"]
 	publicKey := data["public_key"]
+	apilogger.Printf("pk: %v/n privk: %v", publicKey, privateKey)
 
 	return privateKey, publicKey
 }

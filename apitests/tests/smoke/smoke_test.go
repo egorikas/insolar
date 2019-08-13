@@ -28,9 +28,9 @@ func TestGetStatus(t *testing.T) {
 	require.NotEmpty(t, response.ActiveListSize)
 	require.NotEmpty(t, response.Entropy)
 	for _, v := range response.Nodes {
-		require.Equal(t, "true", v.IsWorking)
+		require.Equal(t, true, v.IsWorking)
 	}
-	require.Equal(t, "true", response.Origin.IsWorking)
+	require.Equal(t, true, response.Origin.IsWorking)
 	require.NotEmpty(t, response.PulseNumber)
 	require.NotEmpty(t, response.Version)
 }
