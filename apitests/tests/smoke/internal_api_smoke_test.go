@@ -1,4 +1,4 @@
-package internalapitests
+package smoke
 
 import (
 	"github.com/insolar/insolar/apitests/apihelper"
@@ -37,4 +37,23 @@ func TestMigrationDeactivateDaemon(t *testing.T) {
 	response := apihelper.MigrationDeactivateDaemon(t, "")
 	require.NotEmpty(t, response.Result)
 	require.Empty(t, response.Error)
+}
+
+func TestMigrationActivateDaemon(t *testing.T) {
+	response := apihelper.MigrationActivateDaemon(t, "")
+	require.NotEmpty(t, response.Result)
+	require.Empty(t, response.Error)
+}
+
+func TestGetStatus(t *testing.T) {
+	response := apihelper.GetStatus(t)
+	require.Equal(t, "CompleteNetworkState", response.NetworkState)
+	require.NotEmpty(t, response.ActiveListSize)
+	require.NotEmpty(t, response.Entropy)
+	for _, v := range response.Nodes {
+		require.Equal(t, true, v.IsWorking)
+	}
+	require.Equal(t, true, response.Origin.IsWorking)
+	require.NotEmpty(t, response.PulseNumber)
+	require.NotEmpty(t, response.Version)
 }

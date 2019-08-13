@@ -9,23 +9,46 @@ import (
 )
 
 const (
+
+	//information_api
+	GetStatusMethod = "node.getStatus"
 	//migration_api
 	MigrationAddAddresses = "migration.addAddresses"
 	MigrationGetInfo      = "migration.getInfo"
 	DepositMigration      = "deposit.migration"
-	MemberGetBalance      = "member.getBalance"
 	DeactivateDaemon      = "migration.deactivateDaemon"
+	ActivateDaemon        = "migration.activateDaemon"
+
+	//member api
+	MemberGetBalance = "member.getBalance"
 )
 
-var internalMemberApi = getInternalClient().MemberApi
-var internalMigrationApi = getInternalClient().MigrationApi
-var internalObserverApi = getInternalClient().ObserverApi
+var internalMemberApi = GetInternalClient().MemberApi
+var internalMigrationApi = GetInternalClient().MigrationApi
+var internalObserverApi = GetInternalClient().ObserverApi
+var internalInformationApi = GetInternalClient().InformationApi
 
-func getInternalClient() *insolar_internal_api.APIClient {
+func GetInternalClient() *insolar_internal_api.APIClient {
 	c := insolar_internal_api.Configuration{
 		BasePath: url,
 	}
 	return insolar_internal_api.NewAPIClient(&c)
+}
+
+func GetStatus(t *testing.T) insolar_internal_api.NodeGetStatusResponseResult {
+	body := insolar_internal_api.NodeGetStatusRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      GetRequestId(),
+		Method:  GetStatusMethod,
+		Params:  nil,
+	}
+	apilogger.LogApiRequest(GetStatusMethod, body, nil)
+	response, http, err := internalInformationApi.GetStatus(nil, body)
+	require.Nil(t, err)
+	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
+
+	return response.Result
 }
 
 func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivateDaemonResponse {
@@ -147,9 +170,35 @@ func MigrationDeactivateDaemon(t *testing.T, migrationDaemonReference string) in
 			Reference: "", //admin
 		},
 	}
-	//d, s, m := sign(body, ms.PrivateKey)
+	//d, s, m := sign(body, admin.PrivateKey)
 	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
 	response, http, err := internalMigrationApi.MigrationDeactivateDaemon(nil, "", "", body)
+	require.Nil(t, err)
+	CheckResponseHasNoError(t, response)
+	apilogger.LogApiResponse(http, response)
+	apilogger.Printf("response id: %d", response.Id)
+	return response
+}
+
+func MigrationActivateDaemon(t *testing.T, migrationDaemonReference string) insolar_internal_api.MigrationDeactivateDaemonResponse {
+
+	body := insolar_internal_api.MigrationActivateDaemonRequest{
+		Jsonrpc: JSONRPCVersion,
+		Id:      GetRequestId(),
+		Method:  ApiCall,
+		Params: insolar_internal_api.MigrationActivateDaemonRequestParams{
+			Seed:     GetSeed(t),
+			CallSite: ActivateDaemon,
+			CallParams: insolar_internal_api.MigrationActivateDaemonRequestParamsCallParams{
+				Reference: migrationDaemonReference, //migrationdaemon
+			},
+			PublicKey: "", //admin
+			Reference: "", //admin
+		},
+	}
+	//d, s, m := sign(body, admin.PrivateKey)
+	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
+	response, http, err := internalMigrationApi.MigrationChangeDaemon(nil, "", "", body)
 	require.Nil(t, err)
 	CheckResponseHasNoError(t, response)
 	apilogger.LogApiResponse(http, response)

@@ -16,9 +16,9 @@ const (
 	ApiCall        = "api.call"
 	//ContractCall   = "contract.call"
 	//information_api
-	GetSeedMethod   = "node.getSeed"
-	GetInfoMethod   = "network.getInfo"
-	GetStatusMethod = "node.getStatus"
+	GetSeedMethod = "node.getSeed"
+	GetInfoMethod = "network.getInfo"
+
 	//member_api
 	MemberCreateMethod   = "member.create"
 	MemberTransferMethod = "member.transfer"
@@ -71,22 +71,6 @@ func GetInfo(t *testing.T) insolar_api.NetworkGetInfoResponseResult {
 	}
 	apilogger.LogApiRequest(GetInfoMethod, infoBody, nil)
 	response, http, err := informationApi.GetInfo(nil, infoBody)
-	require.Nil(t, err)
-	apilogger.LogApiResponse(http, response)
-	CheckResponseHasNoError(t, response)
-
-	return response.Result
-}
-
-func GetStatus(t *testing.T) insolar_api.NodeGetStatusResponseResult {
-	body := insolar_api.NodeGetStatusRequest{
-		Jsonrpc: JSONRPCVersion,
-		Id:      GetRequestId(),
-		Method:  GetStatusMethod,
-		Params:  nil,
-	}
-	apilogger.LogApiRequest(GetStatusMethod, body, nil)
-	response, http, err := informationApi.GetStatus(nil, body)
 	require.Nil(t, err)
 	apilogger.LogApiResponse(http, response)
 	CheckResponseHasNoError(t, response)
