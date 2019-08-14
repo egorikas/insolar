@@ -55,6 +55,7 @@ type Runner struct {
 	PulseAccessor       pulse.Accessor              `inject:""`
 	ArtifactManager     artifacts.Client            `inject:""`
 	JetCoordinator      jet.Coordinator             `inject:""`
+	NetworkStatus       insolar.NetworkStatus       `inject:""`
 	server              *http.Server
 	rpcServer           *rpc.Server
 	cfg                 *configuration.APIRunner
@@ -209,7 +210,8 @@ func (ar *Runner) getMemberPubKey(ctx context.Context, ref string) (crypto.Publi
 	}
 
 	ar.cacheLock.Lock()
+	defer ar.cacheLock.Unlock()
+
 	ar.keyCache[ref] = publicKey
-	ar.cacheLock.Unlock()
 	return publicKey, nil
 }
