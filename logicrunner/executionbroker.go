@@ -25,15 +25,12 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/insolar/insolar/insolar"
-	"github.com/insolar/insolar/insolar/jet"
 	"github.com/insolar/insolar/insolar/message"
-	"github.com/insolar/insolar/insolar/pulse"
 	"github.com/insolar/insolar/insolar/record"
 	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/logicrunner/artifacts"
 	"github.com/insolar/insolar/logicrunner/common"
-	"github.com/insolar/insolar/logicrunner/currentexecution"
-	"github.com/insolar/insolar/logicrunner/executionarchive"
+	"github.com/insolar/insolar/logicrunner/executionregistry"
 	"github.com/insolar/insolar/logicrunner/transcriptdequeue"
 )
 
@@ -52,14 +49,13 @@ type ExecutionBrokerI interface {
 	SetNotPending(ctx context.Context)
 
 	IsKnownRequest(ctx context.Context, req insolar.Reference) bool
-	GetActiveTranscript(req insolar.Reference) *common.Transcript
 
 	AbandonedRequestsOnLedger(ctx context.Context)
 	MoreRequestsOnLedger(ctx context.Context)
 	NoMoreRequestsOnLedger(ctx context.Context)
 	FetchMoreRequestsFromLedger(ctx context.Context)
 
-	OnPulse(ctx context.Context, meNext bool) []insolar.Message
+	OnPulse(ctx context.Context) []insolar.Message
 }
 
 type ExecutionBroker struct {
@@ -73,16 +69,13 @@ type ExecutionBroker struct {
 
 	outgoingSender OutgoingRequestSender
 
-	currentList *currentexecution.List
-
-	executionArchive executionarchive.ExecutionArchive
+	executionRegistry executionregistry.ExecutionRegistry
+	requestsFetcher   RequestsFetcher
 
 	publisher        watermillMsg.Publisher
 	requestsExecutor RequestsExecutor
 	messageBus       insolar.MessageBus
-	jetCoordinator   jet.Coordinator
 	artifactsManager artifacts.Client
-	requestsFetcher  RequestsFetcher
 
 	pending              insolar.PendingState
 	PendingConfirmed     bool
@@ -100,28 +93,24 @@ func NewExecutionBroker(
 	publisher watermillMsg.Publisher,
 	requestsExecutor RequestsExecutor,
 	messageBus insolar.MessageBus,
-	jetCoordinator jet.Coordinator,
-	_ pulse.Accessor,
 	artifactsManager artifacts.Client,
-	executionArchive executionarchive.ExecutionArchive,
+	executionRegistry executionregistry.ExecutionRegistry,
 	outgoingSender OutgoingRequestSender,
 ) *ExecutionBroker {
 	return &ExecutionBroker{
 		Ref: ref,
 
-		mutable:     transcriptdequeue.New(),
-		immutable:   transcriptdequeue.New(),
-		finished:    transcriptdequeue.New(),
-		currentList: currentexecution.NewList(),
+		mutable:   transcriptdequeue.New(),
+		immutable: transcriptdequeue.New(),
+		finished:  transcriptdequeue.New(),
 
 		outgoingSender: outgoingSender,
 
-		publisher:        publisher,
-		requestsExecutor: requestsExecutor,
-		messageBus:       messageBus,
-		jetCoordinator:   jetCoordinator,
-		artifactsManager: artifactsManager,
-		executionArchive: executionArchive,
+		publisher:         publisher,
+		requestsExecutor:  requestsExecutor,
+		messageBus:        messageBus,
+		artifactsManager:  artifactsManager,
+		executionRegistry: executionRegistry,
 
 		processorActive: 0,
 
@@ -162,12 +151,7 @@ func (q *ExecutionBroker) getImmutableTask(ctx context.Context) *common.Transcri
 		return nil
 	}
 
-	err := q.currentList.SetOnce(transcript)
-	if err != nil {
-		inslogger.FromContext(ctx).Error("couldn't get immutable task: ", err.Error())
-		return nil
-	}
-	q.executionArchive.Archive(ctx, transcript)
+	q.executionRegistry.Register(ctx, transcript)
 
 	return transcript
 }
@@ -181,12 +165,7 @@ func (q *ExecutionBroker) getMutableTask(ctx context.Context) *common.Transcript
 		return nil
 	}
 
-	err := q.currentList.SetOnce(transcript)
-	if err != nil {
-		inslogger.FromContext(ctx).Error("couldn't get mutable task: ", err.Error())
-		return nil
-	}
-	q.executionArchive.Archive(ctx, transcript)
+	q.executionRegistry.Register(ctx, transcript)
 
 	return transcript
 }
@@ -199,11 +178,10 @@ func (q *ExecutionBroker) finishTask(ctx context.Context, transcript *common.Tra
 
 	q.finished.Push(transcript)
 
-	if !q.currentList.Has(transcript.RequestRef) {
-		logger.Error("[ ExecutionBroker.FinishTask ] task '%s' is not in current", transcript.RequestRef.String())
+	if q.executionRegistry.GetActiveTranscript(transcript.RequestRef) == nil {
+		logger.Error("[ ExecutionBroker.FinishTask ] task wasn't executed")
 	} else {
-		q.currentList.Delete(transcript.RequestRef)
-		q.executionArchive.Done(transcript)
+		q.executionRegistry.Done(transcript)
 	}
 }
 
@@ -300,7 +278,7 @@ func (q *ExecutionBroker) GetActiveTranscript(
 	q.stateLock.Lock()
 	defer q.stateLock.Unlock()
 
-	return q.currentList.Get(reqRef)
+	return q.executionRegistry.GetActiveTranscript(reqRef)
 }
 
 func (q *ExecutionBroker) HasLedgerRequest(_ context.Context) *common.Transcript {
@@ -450,9 +428,10 @@ func (q *ExecutionBroker) finishPendingIfNeeded(ctx context.Context) {
 
 	// we process mutable and immutable calls in parallel
 	// and use one pending state for all of them
-	// so pending is finish only when all of calls are finished
-	if !q.currentList.Empty() {
-		inslogger.FromContext(ctx).Debug("we are in pending and still have ", q.currentList.Length(), " requests to finish")
+	// so pending is finished only when all calls are finished
+	if !q.executionRegistry.IsEmpty() {
+		count := q.executionRegistry.Length()
+		inslogger.FromContext(ctx).Debug("we are in pending and still have ", count, " requests to finish")
 		return
 	}
 
@@ -460,21 +439,18 @@ func (q *ExecutionBroker) finishPendingIfNeeded(ctx context.Context) {
 	q.pending = insolar.NotPending
 	q.PendingConfirmed = false
 
-	meCurrent, _ := q.jetCoordinator.IsMeAuthorizedNow(
-		ctx, insolar.DynamicRoleVirtualExecutor, *q.Ref.Record(),
-	)
-	if !meCurrent {
-		go q.finishPending(ctx)
-	}
+	go q.finishPending(ctx)
 }
 
-func (q *ExecutionBroker) onPulseWeNotNext(ctx context.Context) []insolar.Message {
+func (q *ExecutionBroker) OnPulse(ctx context.Context) []insolar.Message {
 	logger := inslogger.FromContext(ctx)
+	q.stateLock.Lock()
+	defer q.stateLock.Unlock()
 
 	q.stopRequestsFetcher(ctx)
 
-	messages := make([]insolar.Message, 0)
 	sendExecResults := false
+	rotationResults := q.rotate(maxQueueLength)
 
 	switch {
 	case q.isActive():
@@ -485,70 +461,34 @@ func (q *ExecutionBroker) onPulseWeNotNext(ctx context.Context) []insolar.Messag
 		q.pending = insolar.NotPending
 		sendExecResults = true
 		q.ledgerHasMoreRequests = true
-	case q.finished.Length() > 0:
+	case len(rotationResults.Finished) > 0 || len(rotationResults.Requests) > 0:
 		sendExecResults = true
 	}
 
+	messages := make([]insolar.Message, 0)
+
 	// rotation results also contain finished requests
-	rotationResults := q.rotate(maxQueueLength)
-	if len(rotationResults.Requests) > 0 || sendExecResults {
+	if sendExecResults {
 		// TODO: we also should send when executed something for validation
 		// TODO: now validation is disabled
 		messagesQueue := convertQueueToMessageQueue(ctx, rotationResults.Requests)
-
 		ledgerHasMoreRequests := q.ledgerHasMoreRequests || rotationResults.LedgerHasMoreRequests
-		resultsMsg := &message.ExecutorResults{
+
+		messages = append(messages, &message.ExecutorResults{
 			RecordRef:             q.Ref,
 			Pending:               q.pending,
 			Queue:                 messagesQueue,
 			LedgerHasMoreRequests: ledgerHasMoreRequests,
-		}
-		messages = append(messages, resultsMsg)
+		})
 	}
 
 	return messages
-}
-
-func (q *ExecutionBroker) onPulseWeNext(ctx context.Context) []insolar.Message {
-	logger := inslogger.FromContext(ctx)
-
-	switch {
-	case q.isActive():
-		// no pending should be as we are executing
-		logger.Info("continuing pending execution on pulse")
-		q.pending = insolar.InPending
-		q.PendingConfirmed = true
-
-	case q.notConfirmedPending():
-		logger.Warn("looks like pending executor died, re-starting execution")
-		q.pending = insolar.NotPending
-		q.ledgerHasMoreRequests = true
-		q.PendingConfirmed = false
-		q.StartProcessorsIfNeeded(ctx)
-
-	default:
-		q.PendingConfirmed = false
-
-	}
-
-	return make([]insolar.Message, 0)
 }
 
 // notConfirmedPending checks that we were in pending and waiting
 // for previous executor to notify us that he still executes it
 func (q *ExecutionBroker) notConfirmedPending() bool {
 	return q.pending == insolar.InPending && !q.PendingConfirmed
-}
-
-func (q *ExecutionBroker) OnPulse(ctx context.Context, meNext bool) []insolar.Message {
-	q.stateLock.Lock()
-	defer q.stateLock.Unlock()
-
-	if meNext {
-		return q.onPulseWeNext(ctx)
-	}
-
-	return q.onPulseWeNotNext(ctx)
 }
 
 func (q *ExecutionBroker) NoMoreRequestsOnLedger(ctx context.Context) {
@@ -723,7 +663,7 @@ func (q *ExecutionBroker) AddAdditionalRequestFromPrevExecutor(
 }
 
 func (q *ExecutionBroker) isActive() bool {
-	return !q.currentList.Empty()
+	return !q.executionRegistry.IsEmpty()
 }
 
 func (q *ExecutionBroker) clarifyPendingStateFromLedger(ctx context.Context) {
