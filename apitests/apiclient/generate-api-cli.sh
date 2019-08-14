@@ -17,9 +17,9 @@ do
   fi
 	cd ${repo_dir} || exit
 
-#	npm install
+	npm install
 
-	# check and install api-tools@latest
+  #	check and install api-tools@latest
 	if [[ $(npm outdated | grep @insolar/api-tools) != "" ]]; then
 	    npm install @insolar/api-tools@latest --save
 	fi
