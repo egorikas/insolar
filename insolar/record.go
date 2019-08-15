@@ -123,11 +123,20 @@ func (id *ID) MarshalJSON() ([]byte, error) {
 // Reference is a unified record reference.
 type Reference [RecordRefSize]byte
 
-// NewReference returns Reference composed from domain and record.
+// NewReference returns Reference composed from one ID.
 func NewReference(id ID) *Reference {
 	var ref Reference
 	copy(ref[:RecordIDSize], id[:])
-	// ref.setDomain(id)
+	// TODO: fix and test this
+	copy(ref[RecordIDSize:], id[:])
+	return &ref
+}
+
+// NewReferenceWithDomain returns Reference composed from domain and record IDs.
+func NewReferenceWithDomain(id ID, domain ID) *Reference {
+	var ref Reference
+	copy(ref[:RecordIDSize], id[:])
+	copy(ref[RecordIDSize:], domain[:])
 	return &ref
 }
 
@@ -153,11 +162,11 @@ func NewReferenceFromBase58(str string) (*Reference, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "bad record part")
 	}
-	_, err = NewIDFromBase58(parts[1])
+	domainID, err := NewIDFromBase58(parts[1])
 	if err != nil {
 		return nil, errors.Wrap(err, "bad domain part")
 	}
-	return NewReference(*recordID), nil
+	return NewReferenceWithDomain(*recordID, *domainID), nil
 }
 
 // Domain returns domain ID part of reference.
