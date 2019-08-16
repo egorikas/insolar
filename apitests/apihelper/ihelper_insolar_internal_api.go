@@ -35,7 +35,7 @@ func GetInternalClient() *insolar_internal_api.APIClient {
 	return insolar_internal_api.NewAPIClient(&c)
 }
 
-func GetStatus(t *testing.T) insolar_internal_api.NodeGetStatusResponseResult {
+func GetStatus(t *testing.T) insolar_internal_api.NodeGetStatusResponse200Result {
 	body := insolar_internal_api.NodeGetStatusRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
@@ -51,7 +51,7 @@ func GetStatus(t *testing.T) insolar_internal_api.NodeGetStatusResponseResult {
 	return response.Result
 }
 
-func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivateDaemonResponse {
+func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivateDaemonResponse200 {
 	ms, _ := NewMemberSignature()
 	uuids, err := uuid.NewV4()
 	if err != nil {
@@ -83,7 +83,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 	return response
 }
 
-func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoResponse {
+func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoResponse200 {
 	body := insolar_internal_api.MigrationGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
@@ -98,7 +98,7 @@ func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoRespons
 	return response
 }
 
-func MigrationDeposit(t *testing.T) insolar_internal_api.DepositMigrationResponse {
+func MigrationDeposit(t *testing.T) insolar_internal_api.DepositMigrationResponse200 {
 	body := insolar_internal_api.DepositMigrationRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
@@ -130,7 +130,7 @@ func ObserverToken(t *testing.T) map[string]interface{} {
 	return response
 }
 
-func GetBalance(t *testing.T, member MemberObject) insolar_internal_api.MemberGetBalanceResponse {
+func GetBalance(t *testing.T, member MemberObject) insolar_internal_api.MemberGetBalanceResponse200 {
 	body := insolar_internal_api.MemberGetBalanceRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
@@ -154,7 +154,7 @@ func GetBalance(t *testing.T, member MemberObject) insolar_internal_api.MemberGe
 	return response
 }
 
-func MigrationDeactivateDaemon(t *testing.T, migrationDaemonReference string) insolar_internal_api.MigrationDeactivateDaemonResponse {
+func MigrationDeactivateDaemon(t *testing.T, migrationDaemonReference string) insolar_internal_api.MigrationDeactivateDaemonResponse200 {
 
 	body := insolar_internal_api.MigrationDeactivateDaemonRequest{
 		Jsonrpc: JSONRPCVersion,
@@ -180,7 +180,7 @@ func MigrationDeactivateDaemon(t *testing.T, migrationDaemonReference string) in
 	return response
 }
 
-func MigrationActivateDaemon(t *testing.T, migrationDaemonReference string) insolar_internal_api.MigrationDeactivateDaemonResponse {
+func MigrationActivateDaemon(t *testing.T, migrationDaemonReference string) insolar_internal_api.MigrationDeactivateDaemonResponse200 {
 
 	body := insolar_internal_api.MigrationActivateDaemonRequest{
 		Jsonrpc: JSONRPCVersion,

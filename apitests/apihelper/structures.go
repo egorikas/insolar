@@ -16,7 +16,7 @@ type MemberSignature struct {
 type MemberObject struct {
 	MemberReference      string
 	Signature            MemberSignature
-	MemberResponseResult insolar_api.MemberCreateResponse
+	MemberResponseResult insolar_api.MemberCreateResponse200
 }
 
 type SignatureHeaders struct {

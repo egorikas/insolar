@@ -5,8 +5,8 @@ set -x
 WORKDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 SRC_DIR=~/go/src/github.com/insolar
 SPEC_BASE_DIR=${WORKDIR}
-#REPOS=( "insolar-api" "insolar-observer-api" "insolar-internal-api" )
-REPOS=( "insolar-api" "insolar-internal-api")
+REPOS=( "insolar-api" "insolar-observer-api" "insolar-internal-api" )
+#REPOS=( "insolar-api" "insolar-internal-api")
 
 for repo_name in "${REPOS[@]}"
 do

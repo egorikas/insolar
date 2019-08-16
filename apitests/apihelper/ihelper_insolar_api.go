@@ -62,7 +62,7 @@ func GetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
 	return response.Result.Seed
 }
 
-func GetInfo(t *testing.T) insolar_api.NetworkGetInfoResponseResult {
+func GetInfo(t *testing.T) insolar_api.NetworkGetInfoResponse200Result {
 	infoBody := insolar_api.NetworkGetInfoRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
@@ -111,7 +111,7 @@ func CreateMember(t *testing.T) MemberObject {
 	}
 }
 
-func (member *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetResponse {
+func (member *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetResponse200 {
 	seed := GetSeed(t)
 	request := insolar_api.MemberGetRequest{
 		Jsonrpc: JSONRPCVersion,
@@ -133,7 +133,7 @@ func (member *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetRespons
 	return response
 }
 
-func (member *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) insolar_api.MemberTransferResponse {
+func (member *MemberObject) Transfer(t *testing.T, toMemberRef string, amount string) insolar_api.MemberTransferResponse200 {
 	seed := GetSeed(t)
 	request := insolar_api.MemberTransferRequest{
 		Jsonrpc: JSONRPCVersion,
@@ -188,18 +188,18 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	return MemberObject{
 		MemberReference: response.Result.CallResult.Reference,
 		Signature:       ms,
-		MemberResponseResult: insolar_api.MemberCreateResponse{
+		MemberResponseResult: insolar_api.MemberCreateResponse200{
 			Jsonrpc: response.Jsonrpc,
 			Id:      response.Id,
-			Result: insolar_api.MemberCreateResponseResult{
-				CallResult: insolar_api.MemberCreateResponseResultCallResult{
+			Result: insolar_api.MemberCreateResponse200Result{
+				CallResult: insolar_api.MemberCreateResponse200ResultCallResult{
 					Reference: response.Result.CallResult.Reference,
 				},
 				RequestReference: response.Result.RequestReference,
 				TraceID:          response.Result.TraceID,
 			},
-			Error: insolar_api.MemberCreateResponseError{
-				Data: insolar_api.MemberCreateResponseErrorData{
+			Error: insolar_api.MemberCreateResponse200Error{
+				Data: insolar_api.MemberCreateResponse200ErrorData{
 					RequestReference: response.Error.Data.RequestReference,
 					TraceID:          response.Error.Data.TraceID,
 				},
@@ -210,7 +210,7 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	}
 }
 
-func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse {
+func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse200 {
 	var err error
 	ms, _ := NewMemberSignature()
 

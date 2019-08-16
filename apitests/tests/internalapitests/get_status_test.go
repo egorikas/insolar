@@ -86,7 +86,8 @@ func getStatusWithBadRequest(t *testing.T, r insolar_internal_api.NodeGetStatusR
 	require.Equal(t, int32(error.Code), response.Error.Code)
 	require.Empty(t, response.Result)
 }
-func GetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest) insolar_internal_api.NodeGetStatusResponseResult {
+
+func GetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest) insolar_internal_api.NodeGetStatusResponse200Result {
 	response, http := loggingGetStatusRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
 	require.Equal(t, "CompleteNetworkState", response.Result.NetworkState)
@@ -102,7 +103,7 @@ func GetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest)
 	return response.Result
 }
 
-func loggingGetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest) (insolar_internal_api.NodeGetStatusResponse, *http.Response) {
+func loggingGetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest) (insolar_internal_api.NodeGetStatusResponse200, *http.Response) {
 	apilogger.LogApiRequest(r.Method, r, nil)
 	response, http, err := apihelper.GetInternalClient().InformationApi.GetStatus(nil, r)
 	require.Nil(t, err)
