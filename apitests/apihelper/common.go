@@ -11,7 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
-	"github.com/insolar/insolar/api"
+	"github.com/insolar/insolar/api/requester"
 	"github.com/insolar/insolar/apitests/apihelper/apilogger"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
@@ -69,7 +69,7 @@ func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string, ma
 	}
 	request, err := http.NewRequest("ignore", "ignore", bodyBuf)
 	memberCreateRequest := reflect.TypeOf(payload)
-	rawBody, err := api.UnmarshalRequest(request, &memberCreateRequest)
+	rawBody, err := requester.UnmarshalRequest(request, &memberCreateRequest)
 	if err != nil {
 		apilogger.Fatal(err)
 	}

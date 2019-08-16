@@ -25,7 +25,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -68,7 +67,7 @@ func FakeRPCHandler(response http.ResponseWriter, req *http.Request) {
 	response.Header().Add("Content-Type", "application/json")
 	rpcResponse := RPCResponse{}
 	request := Request{}
-	_, err := unmarshalRequest(req, &request)
+	_, err := UnmarshalRequest(req, &request)
 	if err != nil {
 		log.Errorf("Can't read request\n")
 		return
@@ -273,21 +272,4 @@ func TestMarshalSig(t *testing.T) {
 
 	require.Equal(t, r1, r2, errors.Errorf("Invalid S number"))
 	require.Equal(t, s1, s2, errors.Errorf("Invalid R number"))
-}
-
-// unmarshalRequest unmarshals request to api
-func unmarshalRequest(req *http.Request, params interface{}) ([]byte, error) {
-	body, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "[ unmarshalRequest ] Can't read body. So strange")
-	}
-	if len(body) == 0 {
-		return nil, errors.New("[ unmarshalRequest ] Empty body")
-	}
-
-	err = json.Unmarshal(body, &params)
-	if err != nil {
-		return body, errors.Wrap(err, "[ unmarshalRequest ] Can't unmarshal input params")
-	}
-	return body, nil
 }

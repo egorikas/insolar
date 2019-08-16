@@ -14,7 +14,7 @@ const (
 	url            = "http://localhost:19102"
 	JSONRPCVersion = "2.0"
 	ApiCall        = "api.call"
-	//ContractCall   = "contract.call"
+	ContractCall   = "contract.call"
 	//information_api
 	GetSeedMethod = "node.getSeed"
 	GetInfoMethod = "network.getInfo"
@@ -90,7 +90,7 @@ func CreateMember(t *testing.T) MemberObject {
 	request := insolar_api.MemberCreateRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_api.MemberCreateRequestParams{
 			Seed:      seed,
 			CallSite:  MemberCreateMethod,
@@ -116,7 +116,7 @@ func (member *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetRespons
 	request := insolar_api.MemberGetRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_api.MemberGetRequestParams{
 			Seed:       seed,
 			CallSite:   MemberGetMethod,
@@ -138,7 +138,7 @@ func (member *MemberObject) Transfer(t *testing.T, toMemberRef string, amount st
 	request := insolar_api.MemberTransferRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_api.MemberTransferRequestParams{
 			Seed:     seed,
 			CallSite: MemberTransferMethod,
@@ -168,7 +168,7 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	request := insolar_api.MemberMigrationCreateRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      1,
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_api.MemberMigrationCreateRequestParams{
 			Seed:       seed,
 			CallSite:   MemberMigrationCreateMethod,
@@ -217,7 +217,7 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse200 {
 	request := insolar_api.DepositTransferRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      1,
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_api.DepositTransferRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: DepositTransferMethod,

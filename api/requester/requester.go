@@ -276,6 +276,23 @@ func marshalSig(r, s *big.Int) (string, error) {
 	return base64.StdEncoding.EncodeToString(asnSig), nil
 }
 
+// unmarshalRequest unmarshals request to api
+func UnmarshalRequest(req *http.Request, params interface{}) ([]byte, error) {
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		return nil, errors.Wrap(err, "[ unmarshalRequest ] Can't read body. So strange")
+	}
+	if len(body) == 0 {
+		return nil, errors.New("[ unmarshalRequest ] Empty body")
+	}
+
+	err = json.Unmarshal(body, &params)
+	if err != nil {
+		return body, errors.Wrap(err, "[ unmarshalRequest ] Can't unmarshal input params")
+	}
+	return body, nil
+}
+
 // Send first gets seed and after that makes target request
 func Send(ctx context.Context, url string, userCfg *UserConfigJSON, params *Params) ([]byte, error) {
 	verboseInfo(ctx, "Sending GETSEED request ...")

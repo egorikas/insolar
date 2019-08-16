@@ -86,7 +86,7 @@ func getInfoWithBadRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest, er
 	require.Equal(t, int32(error.Code), response.Error.Code)
 	require.Empty(t, response.Result)
 }
-func getInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) insolar_api.NetworkGetInfoResponseResult {
+func getInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) insolar_api.NetworkGetInfoResponse200Result {
 	response, http := loggingGetInfoRequest(t, r)
 	require.Equal(t, 200, http.StatusCode)
 	require.NotEmpty(t, response.Result.TraceID)
@@ -97,7 +97,7 @@ func getInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) insolar_a
 	return response.Result
 }
 
-func loggingGetInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) (insolar_api.NetworkGetInfoResponse, *http.Response) {
+func loggingGetInfoRequest(t *testing.T, r insolar_api.NetworkGetInfoRequest) (insolar_api.NetworkGetInfoResponse200, *http.Response) {
 	apilogger.LogApiRequest(r.Method, r, nil)
 	response, http, err := apihelper.GetClient().InformationApi.GetInfo(nil, r)
 	require.Nil(t, err)

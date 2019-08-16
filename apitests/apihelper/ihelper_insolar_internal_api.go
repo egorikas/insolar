@@ -62,7 +62,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 	body := insolar_internal_api.MigrationAddAddressesRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_internal_api.MigrationAddAddressesRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: MigrationAddAddresses,
@@ -102,7 +102,7 @@ func MigrationDeposit(t *testing.T) insolar_internal_api.DepositMigrationRespons
 	body := insolar_internal_api.DepositMigrationRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_internal_api.DepositMigrationRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: DepositMigration,
@@ -134,7 +134,7 @@ func GetBalance(t *testing.T, member MemberObject) insolar_internal_api.MemberGe
 	body := insolar_internal_api.MemberGetBalanceRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_internal_api.MemberGetBalanceRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: MemberGetBalance,
@@ -159,7 +159,7 @@ func MigrationDeactivateDaemon(t *testing.T, migrationDaemonReference string) in
 	body := insolar_internal_api.MigrationDeactivateDaemonRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_internal_api.MigrationDeactivateDaemonRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: DeactivateDaemon,
@@ -185,7 +185,7 @@ func MigrationActivateDaemon(t *testing.T, migrationDaemonReference string) inso
 	body := insolar_internal_api.MigrationActivateDaemonRequest{
 		Jsonrpc: JSONRPCVersion,
 		Id:      GetRequestId(),
-		Method:  ApiCall,
+		Method:  ContractCall,
 		Params: insolar_internal_api.MigrationActivateDaemonRequestParams{
 			Seed:     GetSeed(t),
 			CallSite: ActivateDaemon,

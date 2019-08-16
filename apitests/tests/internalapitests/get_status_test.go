@@ -94,9 +94,9 @@ func GetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest)
 	require.NotEmpty(t, response.Result.ActiveListSize)
 	require.NotEmpty(t, response.Result.Entropy)
 	for _, v := range response.Result.Nodes {
-		require.Equal(t, "true", v.IsWorking)
+		require.Equal(t, true, v.IsWorking)
 	}
-	require.Equal(t, "true", response.Result.Origin.IsWorking)
+	require.Equal(t, true, response.Result.Origin.IsWorking)
 	require.NotEmpty(t, response.Result.PulseNumber)
 	require.NotEmpty(t, response.Result.Version)
 	require.Empty(t, response.Error)
