@@ -19,11 +19,13 @@ package api
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/insolar/utils"
 	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/version"
+	"github.com/insolar/rpc/v2"
 )
 
 type Node struct {
@@ -44,10 +46,12 @@ type StatusReply struct {
 	NetworkPulseNumber uint32
 	Entropy            []byte
 	Version            string
+	Timestamp          time.Time
+	StartTime          time.Time
 }
 
 // Get returns status info
-func (s *NodeService) GetStatus(r *http.Request, args *interface{}, reply *StatusReply) error {
+func (s *NodeService) GetStatus(r *http.Request, args *interface{}, requestBody *rpc.RequestBody, reply *StatusReply) error {
 	traceID := utils.RandTraceID()
 	ctx, inslog := inslogger.WithTraceField(context.Background(), traceID)
 
@@ -87,6 +91,8 @@ func (s *NodeService) GetStatus(r *http.Request, args *interface{}, reply *Statu
 
 	reply.Entropy = statusReply.Pulse.Entropy[:]
 	reply.Version = version.Version
+	reply.StartTime = statusReply.StartTime
+	reply.Timestamp = statusReply.Timestamp
 
 	return nil
 }
