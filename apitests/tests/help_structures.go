@@ -11,6 +11,6 @@ type CasesInt struct {
 }
 
 type TestError struct {
-	Code    int
+	Code    int32
 	Message string
 }

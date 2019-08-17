@@ -57,7 +57,7 @@ func NewMemberSignature() (MemberSignature, error) {
 	}, err
 }
 
-func sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string, map[string]string) {
+func Sign(payload interface{}, privateKey *ecdsa.PrivateKey) (string, string, map[string]string) {
 	var err error
 	// get hash of byte slice of the payload encoded with the same way as openapi-generator does in the generated client.
 	// this is done to avoid setting incorrect body value into request by generated code.

@@ -97,7 +97,7 @@ func CreateMember(t *testing.T) MemberObject {
 			PublicKey: string(ms.PemPublicKey),
 		},
 	}
-	d, s, m := sign(request, ms.PrivateKey)
+	d, s, m := Sign(request, ms.PrivateKey)
 	apilogger.LogApiRequest(MemberCreateMethod, request, m)
 	response, http, err := memberApi.MemberCreate(nil, d, s, request)
 	require.Nil(t, err)
@@ -124,7 +124,7 @@ func (member *MemberObject) GetMember(t *testing.T) insolar_api.MemberGetRespons
 			PublicKey:  string(member.Signature.PemPublicKey),
 		},
 	}
-	d, s, m := sign(request, member.Signature.PrivateKey)
+	d, s, m := Sign(request, member.Signature.PrivateKey)
 	apilogger.LogApiRequest(MemberGetMethod, request, m)
 	response, http, err := memberApi.MemberGet(nil, d, s, request)
 	require.Nil(t, err)
@@ -150,7 +150,7 @@ func (member *MemberObject) Transfer(t *testing.T, toMemberRef string, amount st
 			Reference: member.MemberResponseResult.Result.CallResult.Reference,
 		},
 	}
-	d, s, m := sign(request, member.Signature.PrivateKey)
+	d, s, m := Sign(request, member.Signature.PrivateKey)
 	apilogger.LogApiRequest(MemberTransferMethod, request, m)
 	response, http, err := memberApi.MemberTransfer(nil, d, s, request)
 	require.Nil(t, err)
@@ -176,7 +176,7 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 			PublicKey:  string(ms.PemPublicKey),
 		},
 	}
-	d, s, m := sign(request, ms.PrivateKey)
+	d, s, m := Sign(request, ms.PrivateKey)
 	apilogger.LogApiRequest(MemberMigrationCreateMethod, request, m)
 	response, http, err := migrationApi.MemberMigrationCreate(nil, d, s, request)
 	apilogger.LogApiResponse(http, response)
@@ -229,7 +229,7 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse200 {
 		},
 	}
 
-	d, s, m := sign(request, ms.PrivateKey)
+	d, s, m := Sign(request, ms.PrivateKey)
 	apilogger.LogApiRequest(DepositTransferMethod, request, m)
 	response, http, err := migrationApi.DepositTransfer(nil, d, s, request)
 	apilogger.LogApiResponse(http, response)

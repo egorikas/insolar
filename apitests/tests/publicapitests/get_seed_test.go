@@ -94,7 +94,7 @@ func getSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
 	return response.Result.Seed
 }
 
-func loggingGetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) (insolar_api.NodeGetSeedResponse, *http.Response) {
+func loggingGetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) (insolar_api.NodeGetSeedResponse200, *http.Response) {
 	apilogger.LogApiRequest(r.Method, r, nil)
 	response, http, err := apihelper.GetClient().InformationApi.GetSeed(nil, r)
 	require.Nil(t, err)

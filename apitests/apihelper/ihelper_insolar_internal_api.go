@@ -73,7 +73,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 			Reference: "",
 		},
 	}
-	d, s, m := sign(body, ms.PrivateKey)
+	d, s, m := Sign(body, ms.PrivateKey)
 	apilogger.LogApiRequest(MigrationAddAddresses, body, m)
 	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, d, s, body)
 	require.Nil(t, err)
@@ -145,7 +145,7 @@ func GetBalance(t *testing.T, member MemberObject) insolar_internal_api.MemberGe
 			Reference: member.MemberReference,
 		},
 	}
-	d, s, m := sign(body, member.Signature.PrivateKey)
+	d, s, m := Sign(body, member.Signature.PrivateKey)
 	apilogger.LogApiRequest(MigrationGetInfo, body, m)
 	response, http, err := internalMemberApi.GetBalance(nil, d, s, body)
 	require.Nil(t, err)
@@ -170,7 +170,7 @@ func MigrationDeactivateDaemon(t *testing.T, migrationDaemonReference string) in
 			Reference: "", //admin
 		},
 	}
-	//d, s, m := sign(body, admin.PrivateKey)
+	//d, s, m := Sign(body, admin.PrivateKey)
 	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
 	response, http, err := internalMigrationApi.MigrationDeactivateDaemon(nil, "", "", body)
 	require.Nil(t, err)
@@ -196,7 +196,7 @@ func MigrationActivateDaemon(t *testing.T, migrationDaemonReference string) inso
 			Reference: "", //admin
 		},
 	}
-	//d, s, m := sign(body, admin.PrivateKey)
+	//d, s, m := Sign(body, admin.PrivateKey)
 	apilogger.LogApiRequest(MigrationAddAddresses, body, nil)
 	response, http, err := internalMigrationApi.MigrationChangeDaemon(nil, "", "", body)
 	require.Nil(t, err)
