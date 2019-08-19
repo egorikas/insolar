@@ -14,6 +14,7 @@ import (
 var Wg sync.WaitGroup
 var Logger *log.Logger
 
+// TODO move these tests and remove file
 // The identifier is to be incremented in every request and each response will contain a corresponding one.
 // The transfer request sends an amount of funds to member identified by a reference:
 func TestCreateTransferGetBalance(t *testing.T) {
