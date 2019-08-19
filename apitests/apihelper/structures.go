@@ -2,8 +2,9 @@ package apihelper
 
 import (
 	"crypto/ecdsa"
-	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 	"math/big"
+
+	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 )
 
 type MemberSignature struct {
@@ -17,11 +18,6 @@ type MemberObject struct {
 	MemberReference      string
 	Signature            MemberSignature
 	MemberResponseResult insolar_api.MemberCreateResponse200
-}
-
-type SignatureHeaders struct {
-	Signature string
-	Digest    string
 }
 
 type ecdsaSignature struct {

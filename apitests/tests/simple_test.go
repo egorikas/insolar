@@ -1,16 +1,13 @@
 package tests
 
 import (
-	"github.com/insolar/insolar/apitests/apiclientdeprecated"
-	"github.com/insolar/insolar/apitests/introspection"
 	"log"
 	"os"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
 
-	"fmt"
+	"github.com/insolar/insolar/apitests/apiclientdeprecated"
 	// - Big numbers to store signatures.
 )
 
@@ -45,29 +42,4 @@ func transfer(memberFrom apiclientdeprecated.MemberObject, memberTo apiclientdep
 		memberTo.MemberResponse.Result.CallResult.Reference)
 	Logger.Println("result: " + string(result))
 	time.Sleep(100 + time.Millisecond)
-}
-
-func TestJetSplit(t *testing.T) {
-	var jetCount, tmpInt int
-
-	jetCount = 0
-	for _, mycount := range introspection.GetMessageNodeCounters("127.0.0.1:55503").Counters {
-		if mycount.Name == "TypeHotObjects" {
-			tmpInt, _ = strconv.Atoi(mycount.Count)
-			jetCount = (jetCount) + tmpInt
-		}
-	}
-
-	for _, mycount2 := range introspection.GetMessageNodeCounters("127.0.0.1:55505").Counters {
-		if mycount2.Name == "TypeHotObjects" {
-			tmpInt, _ = strconv.Atoi(mycount2.Count)
-			jetCount = (jetCount) + tmpInt
-		}
-	}
-
-	var nodeStatus1 apiclientdeprecated.NodeStatus
-	nodeStatus1 = apiclientdeprecated.GetNodeStatus("http://localhost:19103/api/")
-	nodeStatus1 = apiclientdeprecated.GetNodeStatus("http://localhost:19105/api/")
-	fmt.Println(nodeStatus1.Result.PulseNumber)
-	fmt.Printf("%s%d%s", "Jets Count: ", jetCount, "\n")
 }
