@@ -14,9 +14,7 @@
 // limitations under the License.
 //
 
-// +build functest
-
-package functest
+package launchnet
 
 import (
 	"bufio"
@@ -32,16 +30,14 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"testing"
 	"time"
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/pkg/errors"
-
 	"github.com/insolar/insolar/api/requester"
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/insolar/defaults"
+	"github.com/pkg/errors"
 )
 
 const HOST = "http://localhost:19102"
@@ -57,6 +53,55 @@ var cmdCompleted = make(chan error, 1)
 var stdin io.WriteCloser
 var stdout io.ReadCloser
 var stderr io.ReadCloser
+
+// Method starts launchnet before execution of callback function (cb) and stops launchnet after.
+// Returns exit code as a result from calling callback function.
+func Run(cb func() int) int {
+	err := setup()
+	defer teardown()
+	if err != nil {
+		fmt.Println("error while setup, skip tests: ", err)
+		return 1
+	}
+
+	c := make(chan os.Signal)
+	signal.Notify(c, os.Interrupt)
+
+	go func() {
+		sig := <-c
+		fmt.Printf("Got %s signal. Aborting...\n", sig)
+		teardown()
+	}()
+
+	pulseWatcher, config, err := pulseWatcherPath()
+	if err != nil {
+		fmt.Println("PulseWatcher not found: ", err)
+		return 1
+	}
+
+	code := cb()
+
+	if code != 0 {
+		out, err := exec.Command(pulseWatcher, "-c", config, "-s").CombinedOutput()
+		if err != nil {
+			fmt.Println("PulseWatcher execution error: ", err)
+			return 1
+		}
+		fmt.Println(string(out))
+	}
+	return code
+}
+
+var info *requester.InfoResponse
+var Root User
+var MigrationAdmin User
+var MigrationDaemons [insolar.GenesisAmountActiveMigrationDaemonMembers]User
+
+type User struct {
+	Ref     string
+	PrivKey string
+	PubKey  string
+}
 
 func launchnetPath(a ...string) (string, error) {
 	cwd, err := os.Getwd()
@@ -85,25 +130,14 @@ func launchnetPath(a ...string) (string, error) {
 	return filepath.Join(parts...), nil
 }
 
-var info *requester.InfoResponse
-var root user
-var migrationAdmin user
-var migrationDaemons [insolar.GenesisAmountActiveMigrationDaemonMembers]user
-
-type user struct {
-	ref     string
-	privKey string
-	pubKey  string
-}
-
-func getNumberNodes() (int, error) {
+func GetNodesCount() (int, error) {
 	type nodesConf struct {
 		DiscoverNodes []interface{} `yaml:"discovery_nodes"`
 	}
 
 	var conf nodesConf
 
-	path, err := launchnetPath("configs", insolarMigrationAdminMemberKeys)
+	path, err := launchnetPath("bootstrap.yaml")
 	if err != nil {
 		return 0, err
 	}
@@ -120,23 +154,7 @@ func getNumberNodes() (int, error) {
 	return len(conf.DiscoverNodes), nil
 }
 
-func functestPath() string {
-	p, err := build.Default.Import("github.com/insolar/insolar", "", build.FindOnly)
-	if err != nil {
-		panic(err)
-	}
-	return filepath.Join(p.Dir, "functest")
-}
-
-func envVarWithDefault(name string, defaultValue string) string {
-	value := os.Getenv(name)
-	if value != "" {
-		return value
-	}
-	return defaultValue
-}
-
-func loadMemberKeys(keysPath string, member *user) error {
+func loadMemberKeys(keysPath string, member *User) error {
 	text, err := ioutil.ReadFile(keysPath)
 	if err != nil {
 		return errors.Wrapf(err, "[ loadMemberKeys ] could't load member keys")
@@ -149,8 +167,8 @@ func loadMemberKeys(keysPath string, member *user) error {
 	if data["private_key"] == "" || data["public_key"] == "" {
 		return errors.New("[ loadMemberKeys ] could't find any keys")
 	}
-	member.privKey = data["private_key"]
-	member.pubKey = data["public_key"]
+	member.PrivKey = data["private_key"]
+	member.PubKey = data["public_key"]
 
 	return nil
 }
@@ -160,7 +178,7 @@ func loadAllMembersKeys() error {
 	if err != nil {
 		return err
 	}
-	err = loadMemberKeys(path, &root)
+	err = loadMemberKeys(path, &Root)
 	if err != nil {
 		return err
 	}
@@ -168,20 +186,21 @@ func loadAllMembersKeys() error {
 	if err != nil {
 		return err
 	}
-	err = loadMemberKeys(path, &migrationAdmin)
+	err = loadMemberKeys(path, &MigrationAdmin)
 	if err != nil {
 		return err
 	}
-	for i, md := range migrationDaemons {
+	for i := range MigrationDaemons {
 		path, err := launchnetPath("configs", "migration_daemon_"+strconv.Itoa(i)+"_member_keys.json")
 		if err != nil {
 			return err
 		}
+		var md User
 		err = loadMemberKeys(path, &md)
 		if err != nil {
 			return err
 		}
-		migrationDaemons[i] = md
+		MigrationDaemons[i] = md
 	}
 
 	return nil
@@ -380,17 +399,17 @@ func setup() error {
 		time.Sleep(time.Second)
 	}
 	if err != nil {
-		return errors.Wrap(err, "[ setup ] could't receive root reference ")
+		return errors.Wrap(err, "[ setup ] could't receive Root reference ")
 	}
 
 	fmt.Println("[ setup ] references successfully received")
-	root.ref = info.RootMember
-	migrationAdmin.ref = info.MigrationAdminMember
-	for i := range migrationDaemons {
-		migrationDaemons[i].ref = info.MigrationDaemonMembers[i]
+	Root.Ref = info.RootMember
+	MigrationAdmin.Ref = info.MigrationAdminMember
+	for i := range MigrationDaemons {
+		MigrationDaemons[i].Ref = info.MigrationDaemonMembers[i]
 	}
 
-	Contracts = make(map[string]*ContractInfo)
+	//Contracts = make(map[string]*contractInfo)
 
 	return nil
 }
@@ -413,42 +432,4 @@ func teardown() {
 		fmt.Println("[ teardown ]  failed to stop insolard: ", err)
 	}
 	fmt.Println("[ teardown ] insolard was successfully stoped")
-}
-
-func TestsMainWrapper(m *testing.M) int {
-	err := setup()
-	defer teardown()
-	if err != nil {
-		fmt.Println("error while setup, skip tests: ", err)
-		return 1
-	}
-
-	c := make(chan os.Signal)
-	signal.Notify(c, os.Interrupt)
-
-	go func() {
-		select {
-		case sig := <-c:
-			fmt.Printf("Got %s signal. Aborting...\n", sig)
-			teardown()
-		}
-	}()
-
-	pulseWatcher, config, err := pulseWatcherPath()
-	if err != nil {
-		fmt.Println("PulseWatcher not found: ", err)
-		return 1
-	}
-
-	code := m.Run()
-
-	if code != 0 {
-		out, err := exec.Command(pulseWatcher, "-c", config, "-s").CombinedOutput()
-		if err != nil {
-			fmt.Println("PulseWatcher execution error: ", err)
-			return 1
-		}
-		fmt.Println(string(out))
-	}
-	return code
 }
