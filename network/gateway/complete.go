@@ -55,13 +55,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/insolar/insolar/instrumentation/instracer"
 	"github.com/insolar/insolar/network"
 	"github.com/insolar/insolar/network/hostnetwork/packet"
 	"github.com/insolar/insolar/network/hostnetwork/packet/types"
 	"github.com/insolar/insolar/network/node"
 	"github.com/insolar/insolar/network/rules"
-	"go.opencensus.io/trace"
 
 	"github.com/insolar/insolar/certificate"
 
@@ -87,12 +85,12 @@ type Complete struct {
 
 func (g *Complete) Run(ctx context.Context, pulse insolar.Pulse) {
 	g.bootstrapTimer.Stop()
-	if pulse.EpochPulseNumber > insolar.EphemeralPulseEpoch {
-		err := g.PulseManager.Set(ctx, pulse)
-		if err != nil {
-			inslogger.FromContext(ctx).Panicf("failed to set start pulse: %d, %s", pulse.PulseNumber, err.Error())
-		}
-	}
+	// if pulse.EpochPulseNumber > insolar.EphemeralPulseEpoch {
+	// 	err := g.PulseManager.Set(ctx, pulse)
+	// 	if err != nil {
+	// 		inslogger.FromContext(ctx).Panicf("failed to set start pulse: %d, %s", pulse.PulseNumber, err.Error())
+	// 	}
+	// }
 
 	g.HostNetwork.RegisterRequestHandler(types.SignCert, g.signCertHandler)
 	metrics.NetworkComplete.Set(float64(time.Now().Unix()))
@@ -214,25 +212,25 @@ func (g *Complete) UpdateState(ctx context.Context, pulseNumber insolar.PulseNum
 
 func (g *Complete) OnPulseFromConsensus(ctx context.Context, pulse insolar.Pulse) {
 	g.Base.OnPulseFromConsensus(ctx, pulse)
-
-	done := make(chan struct{})
-	defer close(done)
-	pulseProcessingWatchdog(ctx, pulse, done)
-
-	logger := inslogger.FromContext(ctx)
-
-	logger.Infof("Got new pulse number: %d", pulse.PulseNumber)
-	ctx, span := instracer.StartSpan(ctx, "ServiceNetwork.Handlepulse")
-	span.AddAttributes(
-		trace.Int64Attribute("pulse.PulseNumber", int64(pulse.PulseNumber)),
-	)
-	defer span.End()
-
-	err := g.PulseManager.Set(ctx, pulse)
-	if err != nil {
-		logger.Fatalf("Failed to set new pulse: %s", err.Error())
-	}
-	logger.Infof("Set new current pulse number: %d", pulse.PulseNumber)
+	//
+	// done := make(chan struct{})
+	// defer close(done)
+	// pulseProcessingWatchdog(ctx, pulse, done)
+	//
+	// logger := inslogger.FromContext(ctx)
+	//
+	// logger.Infof("Got new pulse number: %d", pulse.PulseNumber)
+	// ctx, span := instracer.StartSpan(ctx, "ServiceNetwork.Handlepulse")
+	// span.AddAttributes(
+	// 	trace.Int64Attribute("pulse.PulseNumber", int64(pulse.PulseNumber)),
+	// )
+	// defer span.End()
+	//
+	// err := g.PulseManager.Set(ctx, pulse)
+	// if err != nil {
+	// 	logger.Fatalf("Failed to set new pulse: %s", err.Error())
+	// }
+	// logger.Infof("Set new current pulse number: %d", pulse.PulseNumber)
 }
 
 func pulseProcessingWatchdog(ctx context.Context, pulse insolar.Pulse, done chan struct{}) {
