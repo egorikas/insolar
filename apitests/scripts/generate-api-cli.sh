@@ -4,7 +4,7 @@ set -x
 
 WORKDIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 SRC_DIR=~/go/src/github.com/insolar
-SPEC_BASE_DIR=${WORKDIR}
+APITESTS_DIR=${SRC_DIR}/insolar/apitests
 REPOS=( "insolar-api" "insolar-observer-api" "insolar-internal-api" )
 #REPOS=( "insolar-api" "insolar-internal-api")
 
@@ -27,7 +27,7 @@ do
   npm run export -- --collapse
 
   package=$(echo ${repo_name} | tr '-' '_')
-  output_dir=${SPEC_BASE_DIR}/${package}
+  output_dir=${APITESTS_DIR}/apiclient/${package}
 
   # save tmp yaml file
   if [[ -f ${repo_dir}/api-exported.yaml ]]; then
@@ -48,7 +48,7 @@ do
 
   # copy old yaml
   if [[ -f ${WORKDIR}/api-exported_old.yaml ]]; then
-      cp ${WORKDIR}/api-exported_old.yaml ${WORKDIR}/${package}/
+      cp ${WORKDIR}/api-exported_old.yaml ${output_dir}/
       rm ${WORKDIR}/api-exported_old.yaml
   fi
 

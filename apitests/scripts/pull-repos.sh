@@ -1,17 +1,14 @@
 #!/bin/#!/usr/bin/env bash
 
 WORKDIR=~/go/src/github.com/insolar
-echo checking insolar-api...
-cd ${WORKDIR}/insolar-api || exit
-git checkout 1.x.x
-git pull
+REPOS=( "insolar-api" "insolar-observer-api" "insolar-internal-api" )
 
-echo checking insolar-internal-api...
-cd ${WORKDIR}/insolar-internal-api || exit
-git checkout 1.x.x
-git pull
+for repo in "${REPOS[@]}"
+do
+  echo checking ${repo}...
+  cd ${WORKDIR}/${repo} || exit
+  git stash
+  git checkout 1.x.x
+  git pull
+done
 
-echo checking insolar-observer-api...
-cd ${WORKDIR}/insolar-observer-api || exit
-git checkout 1.x.x
-git pull
