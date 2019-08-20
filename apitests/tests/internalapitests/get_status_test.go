@@ -122,7 +122,7 @@ func GetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest)
 
 func loggingGetStatusRequest(t *testing.T, r insolar_internal_api.NodeGetStatusRequest) (insolar_internal_api.NodeGetStatusResponse200, *http.Response) {
 	apilogger.LogApiRequest(r.Method, r, nil)
-	response, http, err := apihelper.GetInternalClient().InformationApi.GetStatus(nil, r)
+	response, http, err := apihelper.GetObserverClient().InformationApi.GetStatus(nil, r)
 	require.Nil(t, err)
 	apilogger.LogApiResponse(http, response)
 	return response, http

@@ -30,8 +30,8 @@ var id int32 = 0
 const (
 	url            = "http://localhost:19102"
 	JSONRPCVersion = "2.0"
-	ApiCall        = "api.call"
-	ContractCall   = "contract.call"
+	//ApiCall        = "api.call"
+	ContractCall = "contract.call"
 	//information_api
 	GetSeedMethod = "node.getSeed"
 	GetInfoMethod = "network.getInfo"

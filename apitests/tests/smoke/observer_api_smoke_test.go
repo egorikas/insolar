@@ -15,3 +15,48 @@
 //
 
 package smoke
+
+import (
+	"github.com/insolar/insolar/apitests/apihelper"
+	"github.com/stretchr/testify/require"
+	"testing"
+)
+
+func TestNotification(t *testing.T) {
+	response := apihelper.Notification(t)
+	require.NotEmpty(t, response.Notification)
+}
+
+func TestBalance(t *testing.T) {
+	member := apihelper.CreateMember(t)
+	require.NotEmpty(t, member.MemberReference, "MemberReference")
+
+	member.GetMember(t)
+
+	response := apihelper.Balance(t, member.MemberReference)
+	require.Empty(t, response.Error)
+	require.NotEmpty(t, response.Balance)
+}
+
+func TestMember(t *testing.T) {
+	member := apihelper.CreateMember(t)
+	require.NotEmpty(t, member.MemberReference, "MemberReference")
+	response := apihelper.Member(t, member.MemberReference)
+	require.Empty(t, response.Error)
+	require.NotEmpty(t, response.Balance)
+	require.NotEmpty(t, response.MigrationAddress)
+	require.NotEmpty(t, response.Deposits)
+}
+
+func TestTransaction(t *testing.T) {
+	response := apihelper.Transaction(t, "")
+	require.NotEmpty(t, response.Amount)
+	require.NotEmpty(t, response.Fee)
+	require.NotEmpty(t, response.FromMemberReference)
+	require.Empty(t, response.Error)
+}
+
+func TestTransactionList(t *testing.T) {
+	response := apihelper.TransactionList(t, "")
+	require.NotEmpty(t, response)
+}
