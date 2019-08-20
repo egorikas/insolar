@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+// +build smoke
+
 package smoke
 
 import (

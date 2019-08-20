@@ -14,12 +14,15 @@
 // limitations under the License.
 //
 
+// +build smoke
+
 package smoke
 
 import (
+	"testing"
+
 	"github.com/insolar/insolar/apitests/apihelper"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestNotification(t *testing.T) {
