@@ -19,8 +19,8 @@ package apihelper
 import (
 	"testing"
 
-	"github.com/insolar/insolar/apitests/apiclient/insolar_internal_api"
 	"github.com/insolar/insolar/apitests/apihelper/apilogger"
+	"github.com/insolar/insolar/apitests/scripts/insolar_internal_api"
 	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -94,8 +94,8 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 	apilogger.LogApiRequest(MigrationAddAddresses, body, m)
 	response, http, err := internalMigrationApi.AddMigrationAddresses(nil, d, s, body)
 	require.Nil(t, err)
-	CheckResponseHasNoError(t, response)
 	apilogger.LogApiResponse(http, response)
+	CheckResponseHasNoError(t, response)
 	apilogger.Printf("response id: %d", response.Id)
 	return response
 }

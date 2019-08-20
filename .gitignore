@@ -57,6 +57,6 @@ network_cache
 /docs/build
 
 # codegen for api tests
-/apitests/apiclient/insolar_api
-/apitests/apiclient/insolar_internal_api
-/apitests/apiclient/insolar_observer_api
+/apitests/scripts/insolar_api
+/apitests/scripts/insolar_internal_api
+/apitests/scripts/insolar_observer_api

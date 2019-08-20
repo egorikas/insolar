@@ -20,8 +20,8 @@ import (
 	"log"
 	"testing"
 
-	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 	"github.com/insolar/insolar/apitests/apihelper/apilogger"
+	"github.com/insolar/insolar/apitests/scripts/insolar_api"
 	"github.com/stretchr/testify/require"
 )
 
