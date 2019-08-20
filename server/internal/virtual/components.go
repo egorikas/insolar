@@ -112,7 +112,7 @@ func initComponents(
 	keyProcessor insolar.KeyProcessor,
 	certManager insolar.CertificateManager,
 
-) (*component.Manager, insolar.TerminationHandler, func()) {
+) (*component.Manager, insolar.TerminationHandler, func(context.Context)) {
 	cm := component.Manager{}
 
 	// Watermill.
@@ -163,8 +163,10 @@ func initComponents(
 	logicRunner, err := logicrunner.NewLogicRunner(&cfg.LogicRunner, publisher, b)
 	checkError(ctx, err, "failed to start LogicRunner")
 
-	contractRequester, err := contractrequester.New(logicRunner)
+	contractRequester, err := contractrequester.New(ctx, nw)
 	checkError(ctx, err, "failed to start ContractRequester")
+
+	contractRequester.UnwantedResponseCallback = logicrunner.UnwantedResponseHandler(logicRunner)
 
 	pm := pulsemanager.NewPulseManager(logicRunner.ResultsMatcher)
 
@@ -219,7 +221,12 @@ func initComponents(
 		logicRunner.FlowDispatcher.Process,
 	)
 
-	return &cm, terminationHandler, stopper
+	return &cm, terminationHandler, func(ctx context.Context) {
+		if err := contractRequester.Stop(); err != nil {
+			inslogger.FromContext(ctx).Error("Error while stopping contractRequester", err)
+		}
+		stopper()
+	}
 }
 
 func startWatermill(
@@ -237,6 +244,7 @@ func startWatermill(
 	if err != nil {
 		panic(err)
 	}
+
 	outRouter.AddNoPublisherHandler(
 		"OutgoingHandler",
 		bus.TopicOutgoing,

@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
+
 	"github.com/insolar/insolar/configuration"
 	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/jet"
@@ -31,8 +32,9 @@ import (
 	"github.com/insolar/insolar/ledger/drop"
 	"github.com/insolar/insolar/ledger/heavy/executor"
 
-	"github.com/insolar/insolar/ledger/heavy/proc"
 	"github.com/pkg/errors"
+
+	"github.com/insolar/insolar/ledger/heavy/proc"
 
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/ledger/object"
@@ -143,9 +145,10 @@ func (h *Handler) Process(msg *watermillMsg.Message) error {
 	err = meta.Unmarshal(msg.Payload)
 	if err != nil {
 		logger.Error(err)
+		return nil
 	}
 
-	err = h.handle(ctx, msg)
+	err = h.handle(ctx, meta)
 	if err != nil {
 		logger.Error(errors.Wrap(err, "handle error"))
 	}
@@ -153,16 +156,10 @@ func (h *Handler) Process(msg *watermillMsg.Message) error {
 	return nil
 }
 
-func (h *Handler) handle(ctx context.Context, msg *watermillMsg.Message) error {
+func (h *Handler) handle(ctx context.Context, meta payload.Meta) error {
 	var err error
 	logger := inslogger.FromContext(ctx)
 
-	meta := payload.Meta{}
-	err = meta.Unmarshal(msg.Payload)
-	if err != nil {
-		logger.Error(err)
-		return errors.Wrap(err, "failed to unmarshal meta")
-	}
 	payloadType, err := payload.UnmarshalType(meta.Payload)
 	if err != nil {
 		logger.Error(err)

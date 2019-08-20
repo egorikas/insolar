@@ -73,12 +73,15 @@ import (
 )
 
 type components struct {
-	cmp       component.Manager
-	NodeRef   string
-	NodeRole  string
-	rollback  *executor.DBRollback
+	cmp      component.Manager
+	NodeRef  string
+	NodeRole string
+	rollback *executor.DBRollback
+
 	inRouter  *watermillMsg.Router
 	outRouter *watermillMsg.Router
+
+	contractRequester *contractrequester.ContractRequester
 
 	replicator executor.HeavyReplicator
 }
@@ -174,10 +177,11 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 	)
 	{
 		var err error
-		Requester, err = contractrequester.New(nil)
+		c.contractRequester, err = contractrequester.New(ctx, NetworkService)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to start ContractRequester")
 		}
+		Requester = c.contractRequester
 
 		GenesisProvider, err = genesisdataprovider.New()
 		if err != nil {
@@ -411,6 +415,10 @@ func (c *components) Stop(ctx context.Context) error {
 	err = c.outRouter.Close()
 	if err != nil {
 		inslogger.FromContext(ctx).Error("Error while closing router", err)
+	}
+	err = c.contractRequester.Stop()
+	if err != nil {
+		inslogger.FromContext(ctx).Error("Error while stopping contractRequester", err)
 	}
 	c.replicator.Stop()
 	return c.cmp.Stop(ctx)

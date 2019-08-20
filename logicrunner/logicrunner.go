@@ -37,10 +37,8 @@ import (
 	"github.com/insolar/insolar/insolar/message"
 	"github.com/insolar/insolar/insolar/payload"
 	"github.com/insolar/insolar/insolar/pulse"
-	"github.com/insolar/insolar/insolar/record"
 	"github.com/insolar/insolar/instrumentation/inslogger"
 	"github.com/insolar/insolar/instrumentation/instracer"
-	"github.com/insolar/insolar/log"
 	"github.com/insolar/insolar/logicrunner/artifacts"
 	"github.com/insolar/insolar/logicrunner/builtin"
 	lrCommon "github.com/insolar/insolar/logicrunner/common"
@@ -50,6 +48,8 @@ import (
 	"github.com/insolar/insolar/logicrunner/writecontroller"
 	"github.com/insolar/insolar/network"
 )
+
+var _ insolar.LogicRunner = &LogicRunner{}
 
 // LogicRunner is a general interface of contract executor
 type LogicRunner struct {
@@ -279,7 +279,7 @@ func (lr *LogicRunner) sendOnPulseMessagesAsync(ctx context.Context, messages ma
 	for ref, msg := range messages {
 		sendWg.Add(len(msg))
 		for _, msg := range msg {
-			lr.sendOnPulseMessage(ctx, ref, msg, &sendWg)
+			go lr.sendOnPulseMessage(ctx, ref, msg, &sendWg)
 		}
 	}
 
@@ -302,106 +302,9 @@ func (lr *LogicRunner) sendOnPulseMessage(ctx context.Context, objectRef insolar
 	done()
 }
 
-func (lr *LogicRunner) AddUnwantedResponse(ctx context.Context, msg insolar.Message) error {
-	m := msg.(*message.ReturnResults)
-	return lr.ResultsMatcher.AddUnwantedResponse(ctx, m)
-}
-
-func convertQueueToMessageQueue(ctx context.Context, queue []*lrCommon.Transcript) []*payload.ExecutionQueueElement {
-	mq := make([]*payload.ExecutionQueueElement, 0)
-	var traces string
-	for _, elem := range queue {
-		mq = append(mq, &payload.ExecutionQueueElement{
-			RequestRef:  elem.RequestRef,
-			Incoming:    elem.Request,
-			ServiceData: serviceDataFromContext(elem.Context),
-		})
-
-		traces += inslogger.TraceID(elem.Context) + ", "
-	}
-
-	inslogger.FromContext(ctx).Debug("convertQueueToMessageQueue: ", traces)
-
-	return mq
-}
-
-func contextWithServiceData(ctx context.Context, data message.ServiceData) context.Context {
-	// ctx := inslogger.ContextWithTrace(context.Background(), data.LogTraceID)
-	ctx = inslogger.ContextWithTrace(ctx, data.LogTraceID)
-	ctx = inslogger.WithLoggerLevel(ctx, data.LogLevel)
-	if data.TraceSpanData != nil {
-		parentSpan := instracer.MustDeserialize(data.TraceSpanData)
-		return instracer.WithParentSpan(ctx, parentSpan)
-	}
-	return ctx
-}
-
-func contextFromServiceData(data payload.ServiceData) context.Context {
-	ctx := inslogger.ContextWithTrace(context.Background(), data.LogTraceID)
-	ctx = inslogger.WithLoggerLevel(ctx, data.LogLevel)
-	if data.TraceSpanData != nil {
-		parentSpan := instracer.MustDeserialize(data.TraceSpanData)
-		return instracer.WithParentSpan(ctx, parentSpan)
-	}
-	return ctx
-}
-
-func freshContextFromContext(ctx context.Context) context.Context {
-	res := inslogger.ContextWithTrace(
-		context.Background(),
-		inslogger.TraceID(ctx),
-	)
-	//FIXME: need way to get level out of context
-	//res = inslogger.WithLoggerLevel(res, data.LogLevel)
-	parentSpan, ok := instracer.ParentSpan(ctx)
-	if ok {
-		res = instracer.WithParentSpan(res, parentSpan)
-	}
-
-	if pctx := trace.FromContext(ctx); pctx != nil {
-		res = trace.NewContext(res, pctx)
-	}
-
-	return res
-}
-
-func freshContextFromContextAndRequest(ctx context.Context, req record.IncomingRequest) context.Context {
-	res := inslogger.ContextWithTrace(
-		context.Background(),
-		req.APIRequestID, // this is HACK based on awareness, we just know how trace id is formed
-	)
-	//FIXME: need way to get level out of context
-	//res = inslogger.WithLoggerLevel(res, data.LogLevel)
-	parentSpan, ok := instracer.ParentSpan(ctx)
-	if ok {
-		res = instracer.WithParentSpan(res, parentSpan)
-	}
-	if pctx := trace.FromContext(ctx); pctx != nil {
-		res = trace.NewContext(res, pctx)
-	}
-	return res
-}
-
-func serviceDataFromContext(ctx context.Context) *payload.ServiceData {
-	if ctx == nil {
-		log.Error("nil context, can't create correct ServiceData")
-		return &payload.ServiceData{}
-	}
-	return &payload.ServiceData{
-		LogTraceID:    inslogger.TraceID(ctx),
-		LogLevel:      inslogger.GetLoggerLevel(ctx),
-		TraceSpanData: instracer.MustSerialize(ctx),
-	}
-}
-
-func oldServiceDataFromContext(ctx context.Context) message.ServiceData {
-	if ctx == nil {
-		log.Error("nil context, can't create correct ServiceData")
-		return message.ServiceData{}
-	}
-	return message.ServiceData{
-		LogTraceID:    inslogger.TraceID(ctx),
-		LogLevel:      inslogger.GetLoggerLevel(ctx),
-		TraceSpanData: instracer.MustSerialize(ctx),
+func UnwantedResponseHandler(lr *LogicRunner) func(ctx context.Context, msg payload.Payload) error {
+	return func(ctx context.Context, msg payload.Payload) error {
+		m := msg.(*payload.ReturnResults)
+		return lr.ResultsMatcher.AddUnwantedResponse(ctx, m)
 	}
 }
