@@ -25,5 +25,5 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	apitests.StartLaunchnet(m)
+	apitests.RunTestsInLaunchNet(m)
 }
