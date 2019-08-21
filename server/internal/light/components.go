@@ -149,31 +149,6 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 
 	}
 
-	// API.
-	var (
-		Requester insolar.ContractRequester
-		Genesis   insolar.GenesisDataProvider
-		API       insolar.APIRunner
-	)
-	{
-		var err error
-		comps.contractRequester, err = contractrequester.New(ctx, NetworkService)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to start ContractRequester")
-		}
-		Requester = comps.contractRequester
-
-		Genesis, err = genesisdataprovider.New()
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to start GenesisDataProvider")
-		}
-
-		API, err = api.NewRunner(&cfg.APIRunner)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to start ApiRunner")
-		}
-	}
-
 	// Role calculations.
 	var (
 		Coordinator jet.Coordinator
@@ -211,6 +186,31 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 			return nil, errors.Wrap(err, "failed to start MessageBus")
 		}
 		Sender = bus.NewBus(cfg.Bus, publisher, Pulses, Coordinator, CryptoScheme)
+	}
+
+	// API.
+	var (
+		Requester insolar.ContractRequester
+		Genesis   insolar.GenesisDataProvider
+		API       insolar.APIRunner
+	)
+	{
+		var err error
+		comps.contractRequester, err = contractrequester.New(ctx, subscriber, Sender)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to start ContractRequester")
+		}
+		Requester = comps.contractRequester
+
+		Genesis, err = genesisdataprovider.New()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to start GenesisDataProvider")
+		}
+
+		API, err = api.NewRunner(&cfg.APIRunner)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to start ApiRunner")
+		}
 	}
 
 	metricsHandler, err := metrics.NewMetrics(
