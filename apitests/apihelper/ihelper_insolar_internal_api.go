@@ -98,20 +98,20 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 	return response
 }
 
-func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoResponse200 {
-	body := insolar_internal_api.MigrationGetInfoRequest{
-		Jsonrpc: JSONRPCVersion,
-		Id:      GetRequestId(),
-		Method:  MigrationGetInfo,
-		Params:  nil,
-	}
-	apilogger.LogApiRequest(MigrationGetInfo, body, nil)
-	response, http, err := internalMigrationApi.GetInfo(nil, body)
-	require.Nil(t, err)
-	apilogger.LogApiResponse(http, response)
-	require.NotEmpty(t, response.Result.MigrationAdminMember)
-	return response
-}
+//func GetMigrationInfo(t *testing.T) insolar_internal_api.MigrationGetInfoResponse200 {
+//	body := insolar_internal_api.MigrationGetInfoRequest{
+//		Jsonrpc: JSONRPCVersion,
+//		Id:      GetRequestId(),
+//		Method:  MigrationGetInfo,
+//		Params:  nil,
+//	}
+//	apilogger.LogApiRequest(MigrationGetInfo, body, nil)
+//	response, http, err := internalMigrationApi.GetInfo(nil, body)
+//	require.Nil(t, err)
+//	apilogger.LogApiResponse(http, response)
+//	require.NotEmpty(t, response.Result.MigrationAdminMember)
+//	return response
+//}
 
 func MigrationDeposit(t *testing.T) insolar_internal_api.DepositMigrationResponse200 {
 	body := insolar_internal_api.DepositMigrationRequest{
@@ -138,7 +138,7 @@ func MigrationDeposit(t *testing.T) insolar_internal_api.DepositMigrationRespons
 	return response
 }
 
-func ObserverToken(t *testing.T) map[string]interface{} {
+func ObserverToken(t *testing.T) insolar_internal_api.TokenResponse200 {
 	response, http, err := internalObserverApi.TokenGetInfo(nil)
 	require.Nil(t, err)
 	apilogger.LogApiResponse(http, response)
@@ -221,6 +221,6 @@ func MigrationActivateDaemon(t *testing.T, migrationDaemonReference string) inso
 	return response
 }
 
-func getMigrationAdmin(t *testing.T) string {
-	return GetMigrationInfo(t).Result.MigrationAdminMember
-}
+//func getMigrationAdmin(t *testing.T) string {
+//	return GetMigrationInfo(t).Result.MigrationAdminMember
+//}
