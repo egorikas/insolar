@@ -144,6 +144,7 @@ func (e *requestsExecutor) SendReply(
 
 	if transcript.Request.APINode.IsEmpty() {
 		msg, err = payload.NewResultMessage(&payload.ReturnResults{
+			Target:     transcript.Request.Caller,
 			RequestRef: transcript.RequestRef,
 			Reason:     transcript.Request.Reason,
 			Reply:      reply.ToBytes(re),

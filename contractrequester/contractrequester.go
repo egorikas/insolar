@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill/message"
-	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/pkg/errors"
 
 	"github.com/insolar/insolar/insolar"
@@ -80,7 +79,6 @@ func New(ctx context.Context, subscriber message.Subscriber, b *bus.Bus) (*Contr
 	}
 
 	inRouter.AddMiddleware(
-		middleware.InstantAck,
 		b.IncomingMessageRouter,
 	)
 
@@ -220,23 +218,22 @@ func (cr *ContractRequester) Call(ctx context.Context, inMsg insolar.Payload) (i
 		}
 	}
 
-	sender := bus.NewRetrySender(cr.Sender, cr.PulseAccessor, 5, 1)
+	sender := bus.NewRetrySender(cr.Sender, cr.PulseAccessor, 1, 1)
 
-	message, err := payload.NewMessage(msg)
+	messagePayload, err := payload.NewMessage(msg)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to marshal payload")
 	}
 
 	target := record.CalculateRequestAffinityRef(msg.Request, msg.PulseNumber, cr.PlatformCryptographyScheme)
 
-	resp, done := sender.SendRole(ctx, message, insolar.DynamicRoleVirtualExecutor, *target)
-	defer done()
-
+	resp, done := sender.SendRole(ctx, messagePayload, insolar.DynamicRoleVirtualExecutor, *target)
 	rawResponse := <-resp
+	done()
 
 	replyData, err := deserializePayload(rawResponse)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to deserialize payload")
+		return nil, nil, errors.Wrapf(err, "failed to process response")
 	}
 
 	var (
@@ -312,7 +309,7 @@ func (cr *ContractRequester) result(ctx context.Context, msg *payload.ReturnResu
 	copy(reqHash[:], msg.RequestRef.Record().Hash())
 	c, ok := cr.ResultMap[reqHash]
 	if !ok {
-		inslogger.FromContext(ctx).Info("unwaited results of request ", msg.RequestRef.String())
+		inslogger.FromContext(ctx).Info("unwanted results of request ", msg.RequestRef.String())
 		if cr.UnwantedResponseCallback != nil {
 			return cr.UnwantedResponseCallback(ctx, msg)
 		}
