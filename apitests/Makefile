@@ -9,7 +9,7 @@ tests: ## run api tests
 
 .PHONY: smoke
 smoke: ## run api smoke tests
-	go test ./tests/smoke -count=$(TEST_COUNT) -tags functest
+	go test ./tests/smoke -count=$(TEST_COUNT) -tags smoke
 
 .PHONY: codegen-latest
 codegen-latest: pull codegen ## generate api client from latet repo state
@@ -23,3 +23,8 @@ pull: ## get actual state in api respositories
 codegen: ## generate api client
 #	chmod +x apiclient/generate-api-cli.sh
 	. scripts/generate-api-cli.sh
+
+.PHONY: watch
+watch: ## start all web specs on localhost
+#	chmod +x apiclient/generate-api-cli.sh
+	. scripts/watch-api-frontend.sh

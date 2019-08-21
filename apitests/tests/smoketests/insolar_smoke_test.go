@@ -14,9 +14,7 @@
 // limitations under the License.
 //
 
-// +build smoke
-
-package smoke
+package smoketests
 
 import (
 	"testing"
@@ -27,13 +25,14 @@ import (
 
 // Information api
 
-func TestGetInfo(t *testing.T) {
-	response := apihelper.GetInfo(t)
-	require.NotEmpty(t, response.RootDomain)
-	require.NotEmpty(t, response.RootMember)
-	require.NotEmpty(t, response.NodeDomain)
-	require.NotEmpty(t, response.TraceID)
-}
+// TODO method has been moved to observer
+// func TestGetInfo(t *testing.T) {
+// 	response := apihelper.GetInfo(t)
+// 	require.NotEmpty(t, response.RootDomain)
+// 	require.NotEmpty(t, response.RootMember)
+// 	require.NotEmpty(t, response.NodeDomain)
+// 	require.NotEmpty(t, response.TraceID)
+// }
 
 func TestGetSeed(t *testing.T) {
 	seed := apihelper.GetSeed(t)

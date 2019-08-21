@@ -13,15 +13,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-
 package apihelper
 
 import (
 	"log"
 	"testing"
 
+	"github.com/insolar/insolar/apitests/apiclient/insolar_api"
 	"github.com/insolar/insolar/apitests/apihelper/apilogger"
-	"github.com/insolar/insolar/apitests/scripts/insolar_api"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,17 +29,17 @@ var id int32 = 0
 const (
 	url            = "http://localhost:19102"
 	JSONRPCVersion = "2.0"
-	//ApiCall        = "api.call"
+	// ApiCall        = "api.call"
 	ContractCall = "contract.call"
-	//information_api
+	// information_api
 	GetSeedMethod = "node.getSeed"
 	GetInfoMethod = "network.getInfo"
 
-	//member_api
+	// member_api
 	MemberCreateMethod   = "member.create"
 	MemberTransferMethod = "member.transfer"
 	MemberGetMethod      = "member.get"
-	//migration_api
+	// migration_api
 	MemberMigrationCreateMethod = "member.migrationCreate"
 	DepositTransferMethod       = "deposit.transfer"
 )
@@ -77,26 +76,6 @@ func GetSeedRequest(t *testing.T, r insolar_api.NodeGetSeedRequest) string {
 	apilogger.LogApiResponse(http, response)
 	CheckResponseHasNoError(t, response)
 	return response.Result.Seed
-}
-
-func GetInfo(t *testing.T) insolar_api.NetworkGetInfoResponse200Result {
-	infoBody := insolar_api.NetworkGetInfoRequest{
-		Jsonrpc: JSONRPCVersion,
-		Id:      GetRequestId(),
-		Method:  GetInfoMethod,
-		Params:  nil,
-	}
-	apilogger.LogApiRequest(GetInfoMethod, infoBody, nil)
-	response, http, err := informationApi.GetInfo(nil, infoBody)
-	require.Nil(t, err)
-	apilogger.LogApiResponse(http, response)
-	CheckResponseHasNoError(t, response)
-
-	return response.Result
-}
-
-func GetRootMember(t *testing.T) string {
-	return GetInfo(t).RootMember
 }
 
 func CreateMember(t *testing.T) MemberObject {
