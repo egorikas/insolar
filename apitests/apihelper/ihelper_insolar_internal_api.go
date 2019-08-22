@@ -20,7 +20,6 @@ import (
 
 	"github.com/insolar/insolar/apitests/apiclient/insolar_internal_api"
 	"github.com/insolar/insolar/apitests/apihelper/apilogger"
-	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,12 +65,8 @@ func GetStatus(t *testing.T) insolar_internal_api.NodeGetStatusResponse200Result
 	return response.Result
 }
 
-func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivateDaemonResponse200 {
+func AddMigrationAddresses(t *testing.T, addresses []string) insolar_internal_api.MigrationDeactivateDaemonResponse200 {
 	ms, _ := NewMemberSignature()
-	uuids, err := uuid.NewV4()
-	if err != nil {
-		panic(err)
-	}
 	adminPub, _ := LoadAdminMemberKeys() //todo getinfo
 
 	body := insolar_internal_api.MigrationAddAddressesRequest{
@@ -82,7 +77,7 @@ func AddMigrationAddresses(t *testing.T) insolar_internal_api.MigrationDeactivat
 			Seed:     GetSeed(t),
 			CallSite: MigrationAddAddresses,
 			CallParams: insolar_internal_api.MigrationAddAddressesRequestParamsCallParams{
-				MigrationAddresses: []string{uuids.String()},
+				MigrationAddresses: addresses,
 			},
 			PublicKey: adminPub,
 			Reference: "",

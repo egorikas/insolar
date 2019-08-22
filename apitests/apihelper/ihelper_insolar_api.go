@@ -206,7 +206,7 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 	}
 }
 
-func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse200 {
+func (member *MemberObject) DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse200 {
 	var err error
 	ms, _ := NewMemberSignature()
 
@@ -222,6 +222,7 @@ func DepositTransfer(t *testing.T) insolar_api.DepositTransferResponse200 {
 				EthTxHash: "",
 			},
 			PublicKey: string(ms.PemPublicKey),
+			Reference: member.MemberReference,
 		},
 	}
 
