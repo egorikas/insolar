@@ -23,8 +23,9 @@ import (
 
 	"github.com/insolar/insolar/network"
 
-	"github.com/insolar/insolar/ledger/heavy/exporter"
 	"google.golang.org/grpc"
+
+	"github.com/insolar/insolar/ledger/heavy/exporter"
 
 	"github.com/ThreeDotsLabs/watermill"
 	watermillMsg "github.com/ThreeDotsLabs/watermill/message"
@@ -202,17 +203,11 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 	var (
 		Tokens  insolar.DelegationTokenFactory
 		Parcels message.ParcelFactory
-		Bus     insolar.MessageBus
 		WmBus   *bus.Bus
 	)
 	{
-		var err error
 		Tokens = delegationtoken.NewDelegationTokenFactory()
 		Parcels = messagebus.NewParcelFactory()
-		Bus, err = messagebus.NewMessageBus(cfg)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to start MessageBus")
-		}
 		WmBus = bus.NewBus(cfg.Bus, publisher, Pulses, Coordinator, CryptoScheme)
 	}
 
@@ -224,7 +219,7 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 	)
 	{
 		var err error
-		c.contractRequester, err = contractrequester.New(ctx, subscriber, WmBus)
+		c.contractRequester, err = contractrequester.New(ctx, subscriber)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to start ContractRequester")
 		}
@@ -291,7 +286,6 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 		h.JetCoordinator = Coordinator
 		h.IndexAccessor = indexes
 		h.IndexModifier = indexes
-		h.Bus = Bus
 		h.DropModifier = drops
 		h.PCS = CryptoScheme
 		h.PulseAccessor = Pulses
@@ -367,7 +361,6 @@ func newComponents(ctx context.Context, cfg configuration.Configuration, genesis
 		Pulses,
 		Coordinator,
 		metricsHandler,
-		Bus,
 		Requester,
 		Tokens,
 		Parcels,
@@ -459,17 +452,8 @@ func (c *components) startWatermill(
 		inHandler,
 	)
 
-	startRouter(ctx, inRouter)
+	bus.StartRouter(ctx, inRouter)
 	c.inRouter = inRouter
-	startRouter(ctx, outRouter)
+	bus.StartRouter(ctx, outRouter)
 	c.outRouter = outRouter
-}
-
-func startRouter(ctx context.Context, router *watermillMsg.Router) {
-	go func() {
-		if err := router.Run(ctx); err != nil {
-			inslogger.FromContext(ctx).Error("Error while running router", err)
-		}
-	}()
-	<-router.Running()
 }

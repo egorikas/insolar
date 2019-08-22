@@ -68,6 +68,8 @@ type Sender interface {
 	SendTarget(ctx context.Context, msg *message.Message, target insolar.Reference) (<-chan *message.Message, func())
 	// Reply sends message in response to another message.
 	Reply(ctx context.Context, origin payload.Meta, reply *message.Message)
+
+	IncomingMessageRouter(handle message.HandlerFunc) message.HandlerFunc
 }
 
 type lockedReply struct {

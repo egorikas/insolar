@@ -21,6 +21,7 @@ import (
 	"math/big"
 
 	"github.com/insolar/insolar/insolar"
+	"github.com/insolar/insolar/log"
 	"github.com/insolar/insolar/logicrunner/builtin/foundation/safemath"
 	"github.com/insolar/insolar/logicrunner/builtin/proxy/account"
 	"github.com/insolar/insolar/logicrunner/builtin/proxy/member"
@@ -172,6 +173,8 @@ func (d *Deposit) canTransfer(transferAmount *big.Int) error {
 	if d.PulseDepositUnHold > currentPulse {
 		return fmt.Errorf("hold period didn't end")
 	}
+
+	log.Debug("request", foundation.GetRequestReference(), "current pulse", currentPulse, "depositunhold", d.PulseDepositUnHold)
 
 	spentPeriodInDays := big.NewInt(int64((currentPulse - d.PulseDepositUnHold) / day))
 	amount, ok := new(big.Int).SetString(d.Amount, 10)

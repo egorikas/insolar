@@ -49,7 +49,9 @@ type ContractRequester struct {
 	JetCoordinator             jet.Coordinator                    `inject:""`
 	PlatformCryptographyScheme insolar.PlatformCryptographyScheme `inject:""`
 
-	UnwantedResponseCallback func(ctx context.Context, msg payload.Payload) error
+	subscriber message.Subscriber
+
+	LR insolar.LogicRunner
 
 	ResultMutex sync.Mutex
 	ResultMap   map[[insolar.RecordHashSize]byte]chan *payload.ReturnResults
@@ -61,37 +63,38 @@ type ContractRequester struct {
 	callTimeout time.Duration
 }
 
-// ensure that ContractRequester implements insolar.ContractRequester
-var _ insolar.ContractRequester = &ContractRequester{}
-
 // New creates new ContractRequester
-func New(ctx context.Context, subscriber message.Subscriber, b *bus.Bus) (*ContractRequester, error) {
+func New(_ context.Context, subscriber message.Subscriber) (*ContractRequester, error) {
+
+	return &ContractRequester{
+		ResultMap:   make(map[[insolar.RecordHashSize]byte]chan *payload.ReturnResults),
+		callTimeout: 25 * time.Second,
+		subscriber:  subscriber,
+	}, nil
+}
+
+func (cr *ContractRequester) Start(ctx context.Context) error {
 	wmLogger := log.NewWatermillLogAdapter(inslogger.FromContext(ctx))
 	inRouter, err := message.NewRouter(message.RouterConfig{}, wmLogger)
 	if err != nil {
-		return nil, err
+		return errors.Wrap(err, "failed to create router")
 	}
-
-	cr := &ContractRequester{
-		ResultMap:              make(map[[insolar.RecordHashSize]byte]chan *payload.ReturnResults),
-		callTimeout:            25 * time.Second,
-		inRequestResultsRouter: inRouter,
-	}
-
 	inRouter.AddMiddleware(
-		b.IncomingMessageRouter,
+		cr.Sender.IncomingMessageRouter,
 	)
 
 	inRouter.AddNoPublisherHandler(
 		"IncomingRequestResults",
 		bus.TopicIncomingRequestResults,
-		subscriber,
+		cr.subscriber,
 		cr.ReceiveResult,
 	)
 
-	startRouter(ctx, inRouter)
+	bus.StartRouter(ctx, inRouter)
 
-	return cr, nil
+	cr.inRequestResultsRouter = inRouter
+
+	return nil
 }
 
 func randomUint64() uint64 {
@@ -228,12 +231,15 @@ func (cr *ContractRequester) Call(ctx context.Context, inMsg insolar.Payload) (i
 	target := record.CalculateRequestAffinityRef(msg.Request, msg.PulseNumber, cr.PlatformCryptographyScheme)
 
 	resp, done := sender.SendRole(ctx, messagePayload, insolar.DynamicRoleVirtualExecutor, *target)
-	rawResponse := <-resp
-	done()
+	defer done()
+	rawResponse, ok := <-resp
+	if !ok {
+		return nil, nil, errors.Wrapf(err, "no reply")
+	}
 
-	replyData, err := deserializePayload(rawResponse)
+	replyData, err := reply.UnmarshalFromMeta(rawResponse.Payload)
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "failed to process response")
+		return nil, nil, errors.Wrap(err, "failed to process response")
 	}
 
 	var (
@@ -254,11 +260,10 @@ func (cr *ContractRequester) Call(ctx context.Context, inMsg insolar.Payload) (i
 		}
 
 		return res, nil, nil
-	default:
-		return nil, nil, errors.New("Got not reply.RegisterRequest in reply for CallMethod")
-		// request register
 	case *reply.RegisterRequest:
 		r = *res
+	default:
+		return nil, nil, errors.New("Got not reply.RegisterRequest in reply for CallMethod")
 	}
 
 	if async {
@@ -310,8 +315,8 @@ func (cr *ContractRequester) result(ctx context.Context, msg *payload.ReturnResu
 	c, ok := cr.ResultMap[reqHash]
 	if !ok {
 		inslogger.FromContext(ctx).Info("unwanted results of request ", msg.RequestRef.String())
-		if cr.UnwantedResponseCallback != nil {
-			return cr.UnwantedResponseCallback(ctx, msg)
+		if cr.LR != nil {
+			return cr.LR.AddUnwantedResponse(ctx, msg)
 		}
 		inslogger.FromContext(ctx).Warn("drop unwanted ", msg.RequestRef.String())
 		return nil
@@ -381,50 +386,4 @@ func (cr *ContractRequester) Stop() error {
 	errIn := cr.inRequestResultsRouter.Close()
 
 	return errors.Wrap(errIn, "Error while closing router")
-}
-
-func startRouter(ctx context.Context, router *message.Router) {
-	go func() {
-		if err := router.Run(ctx); err != nil {
-			inslogger.FromContext(ctx).Error("Error while running router", err)
-		}
-	}()
-	<-router.Running()
-}
-
-func deserializePayload(msg *message.Message) (insolar.Reply, error) {
-	if msg == nil {
-		return nil, errors.New("can't deserialize payload of nil message")
-	}
-	meta := payload.Meta{}
-	err := meta.Unmarshal(msg.Payload)
-	if err != nil {
-		return nil, errors.Wrap(err, "can't deserialize message payload")
-	}
-
-	if msg.Metadata.Get(busMeta.Type) == busMeta.TypeReply {
-		rep, err := reply.Deserialize(bytes.NewBuffer(meta.Payload))
-		if err != nil {
-			return nil, errors.Wrap(err, "can't deserialize payload to reply")
-		}
-		return rep, nil
-	}
-
-	payloadType, err := payload.UnmarshalType(meta.Payload)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal payload type")
-	}
-	if payloadType != payload.TypeError {
-		return nil, errors.Errorf("message bus receive unexpected payload type: %s", payloadType)
-	}
-
-	pl, err := payload.UnmarshalFromMeta(msg.Payload)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal error")
-	}
-	p, ok := pl.(*payload.Error)
-	if !ok {
-		return nil, errors.Errorf("unexpected error type %T", pl)
-	}
-	return nil, errors.New(p.Text)
 }

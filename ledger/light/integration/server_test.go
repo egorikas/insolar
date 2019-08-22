@@ -422,8 +422,8 @@ func NewServer(
 			FlowDispatcher.Process,
 		)
 
-		startRouter(ctx, inRouter)
-		startRouter(ctx, outRouter)
+		bus.StartRouter(ctx, inRouter)
+		bus.StartRouter(ctx, outRouter)
 	}
 
 	inslogger.FromContext(ctx).WithFields(map[string]interface{}{
@@ -440,15 +440,6 @@ func NewServer(
 		cleaner:      Cleaner,
 	}
 	return s, nil
-}
-
-func startRouter(ctx context.Context, router *message.Router) {
-	go func() {
-		if err := router.Run(ctx); err != nil {
-			inslogger.FromContext(ctx).Error("Error while running router", err)
-		}
-	}()
-	<-router.Running()
 }
 
 func (s *Server) SetPulse(ctx context.Context) {

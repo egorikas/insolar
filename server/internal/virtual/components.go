@@ -163,10 +163,10 @@ func initComponents(
 	logicRunner, err := logicrunner.NewLogicRunner(&cfg.LogicRunner, publisher, b)
 	checkError(ctx, err, "failed to start LogicRunner")
 
-	contractRequester, err := contractrequester.New(ctx, subscriber, b)
+	contractRequester, err := contractrequester.New(ctx, subscriber)
 	checkError(ctx, err, "failed to start ContractRequester")
 
-	contractRequester.UnwantedResponseCallback = logicrunner.UnwantedResponseHandler(logicRunner)
+	contractRequester.LR = logicRunner
 
 	pm := pulsemanager.NewPulseManager(logicRunner.ResultsMatcher)
 
@@ -263,19 +263,10 @@ func startWatermill(
 		inHandler,
 	)
 
-	startRouter(ctx, inRouter)
-	startRouter(ctx, outRouter)
+	bus.StartRouter(ctx, inRouter)
+	bus.StartRouter(ctx, outRouter)
 
 	return stopWatermill(ctx, inRouter, outRouter)
-}
-
-func startRouter(ctx context.Context, router *message.Router) {
-	go func() {
-		if err := router.Run(ctx); err != nil {
-			inslogger.FromContext(ctx).Error("Error while running router", err)
-		}
-	}()
-	<-router.Running()
 }
 
 func stopWatermill(ctx context.Context, routers ...io.Closer) func() {

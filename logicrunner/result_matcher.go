@@ -20,6 +20,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/pkg/errors"
+
 	"github.com/insolar/insolar/insolar"
 	"github.com/insolar/insolar/insolar/bus"
 	"github.com/insolar/insolar/insolar/flow"
@@ -116,10 +118,12 @@ func (rm *resultsMatcher) AddUnwantedResponse(ctx context.Context, msg *payload.
 func (rm *resultsMatcher) isStillExecutor(ctx context.Context, object insolar.ID) error {
 	pulse, err := rm.lr.PulseAccessor.Latest(ctx)
 	if err != nil {
+		inslogger.FromContext(ctx).Error(errors.Wrap(err, "failed to get latest pulse"))
 		return flow.ErrCancelled
 	}
 	node, err := rm.lr.JetCoordinator.VirtualExecutorForObject(ctx, object, pulse.PulseNumber)
 	if err != nil {
+		inslogger.FromContext(ctx).Error(errors.Wrap(err, "failed to get VirtualExecutorForObject"))
 		return flow.ErrCancelled
 	}
 	if *node != rm.lr.JetCoordinator.Me() {

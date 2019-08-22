@@ -57,6 +57,11 @@ func (r *RetrySender) SendTarget(ctx context.Context, msg *message.Message, targ
 	})
 }
 
+// IncomingMessageRouter is watermill middleware for incoming messages - it decides, how to handle it: as request or as reply.
+func (r *RetrySender) IncomingMessageRouter(handle message.HandlerFunc) message.HandlerFunc {
+	return r.sender.IncomingMessageRouter(handle)
+}
+
 func (r *RetrySender) Reply(ctx context.Context, origin payload.Meta, reply *message.Message) {
 	r.sender.Reply(ctx, origin, reply)
 }

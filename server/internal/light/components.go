@@ -28,6 +28,8 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
+	"github.com/pkg/errors"
+
 	"github.com/insolar/insolar/api"
 	"github.com/insolar/insolar/certificate"
 	"github.com/insolar/insolar/component"
@@ -56,7 +58,6 @@ import (
 	"github.com/insolar/insolar/network/termination"
 	"github.com/insolar/insolar/platformpolicy"
 	"github.com/insolar/insolar/server/internal"
-	"github.com/pkg/errors"
 )
 
 type components struct {
@@ -175,16 +176,10 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 	// Communication.
 	var (
 		Tokens insolar.DelegationTokenFactory
-		Bus    insolar.MessageBus
 		Sender *bus.Bus
 	)
 	{
-		var err error
 		Tokens = delegationtoken.NewDelegationTokenFactory()
-		Bus, err = messagebus.NewMessageBus(cfg)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to start MessageBus")
-		}
 		Sender = bus.NewBus(cfg.Bus, publisher, Pulses, Coordinator, CryptoScheme)
 	}
 
@@ -196,7 +191,7 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 	)
 	{
 		var err error
-		comps.contractRequester, err = contractrequester.New(ctx, subscriber, Sender)
+		comps.contractRequester, err = contractrequester.New(ctx, subscriber)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to start ContractRequester")
 		}
@@ -358,7 +353,6 @@ func newComponents(ctx context.Context, cfg configuration.Configuration) (*compo
 		Coordinator,
 		PulseManager,
 		metricsHandler,
-		Bus,
 		Requester,
 		Tokens,
 		artifacts.NewClient(Sender),
@@ -432,15 +426,6 @@ func (c *components) startWatermill(
 		inHandler,
 	)
 
-	startRouter(ctx, inRouter)
-	startRouter(ctx, outRouter)
-}
-
-func startRouter(ctx context.Context, router *message.Router) {
-	go func() {
-		if err := router.Run(ctx); err != nil {
-			inslogger.FromContext(ctx).Error("Error while running router", err)
-		}
-	}()
-	<-router.Running()
+	bus.StartRouter(ctx, inRouter)
+	bus.StartRouter(ctx, outRouter)
 }

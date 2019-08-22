@@ -18,6 +18,12 @@ import (
 type SenderMock struct {
 	t minimock.Tester
 
+	funcIncomingMessageRouter          func(handle message.HandlerFunc) (h1 message.HandlerFunc)
+	inspectFuncIncomingMessageRouter   func(handle message.HandlerFunc)
+	afterIncomingMessageRouterCounter  uint64
+	beforeIncomingMessageRouterCounter uint64
+	IncomingMessageRouterMock          mSenderMockIncomingMessageRouter
+
 	funcReply          func(ctx context.Context, origin payload.Meta, reply *message.Message)
 	inspectFuncReply   func(ctx context.Context, origin payload.Meta, reply *message.Message)
 	afterReplyCounter  uint64
@@ -44,6 +50,9 @@ func NewSenderMock(t minimock.Tester) *SenderMock {
 		controller.RegisterMocker(m)
 	}
 
+	m.IncomingMessageRouterMock = mSenderMockIncomingMessageRouter{mock: m}
+	m.IncomingMessageRouterMock.callArgs = []*SenderMockIncomingMessageRouterParams{}
+
 	m.ReplyMock = mSenderMockReply{mock: m}
 	m.ReplyMock.callArgs = []*SenderMockReplyParams{}
 
@@ -54,6 +63,221 @@ func NewSenderMock(t minimock.Tester) *SenderMock {
 	m.SendTargetMock.callArgs = []*SenderMockSendTargetParams{}
 
 	return m
+}
+
+type mSenderMockIncomingMessageRouter struct {
+	mock               *SenderMock
+	defaultExpectation *SenderMockIncomingMessageRouterExpectation
+	expectations       []*SenderMockIncomingMessageRouterExpectation
+
+	callArgs []*SenderMockIncomingMessageRouterParams
+	mutex    sync.RWMutex
+}
+
+// SenderMockIncomingMessageRouterExpectation specifies expectation struct of the Sender.IncomingMessageRouter
+type SenderMockIncomingMessageRouterExpectation struct {
+	mock    *SenderMock
+	params  *SenderMockIncomingMessageRouterParams
+	results *SenderMockIncomingMessageRouterResults
+	Counter uint64
+}
+
+// SenderMockIncomingMessageRouterParams contains parameters of the Sender.IncomingMessageRouter
+type SenderMockIncomingMessageRouterParams struct {
+	handle message.HandlerFunc
+}
+
+// SenderMockIncomingMessageRouterResults contains results of the Sender.IncomingMessageRouter
+type SenderMockIncomingMessageRouterResults struct {
+	h1 message.HandlerFunc
+}
+
+// Expect sets up expected params for Sender.IncomingMessageRouter
+func (mmIncomingMessageRouter *mSenderMockIncomingMessageRouter) Expect(handle message.HandlerFunc) *mSenderMockIncomingMessageRouter {
+	if mmIncomingMessageRouter.mock.funcIncomingMessageRouter != nil {
+		mmIncomingMessageRouter.mock.t.Fatalf("SenderMock.IncomingMessageRouter mock is already set by Set")
+	}
+
+	if mmIncomingMessageRouter.defaultExpectation == nil {
+		mmIncomingMessageRouter.defaultExpectation = &SenderMockIncomingMessageRouterExpectation{}
+	}
+
+	mmIncomingMessageRouter.defaultExpectation.params = &SenderMockIncomingMessageRouterParams{handle}
+	for _, e := range mmIncomingMessageRouter.expectations {
+		if minimock.Equal(e.params, mmIncomingMessageRouter.defaultExpectation.params) {
+			mmIncomingMessageRouter.mock.t.Fatalf("Expectation set by When has same params: %#v", *mmIncomingMessageRouter.defaultExpectation.params)
+		}
+	}
+
+	return mmIncomingMessageRouter
+}
+
+// Inspect accepts an inspector function that has same arguments as the Sender.IncomingMessageRouter
+func (mmIncomingMessageRouter *mSenderMockIncomingMessageRouter) Inspect(f func(handle message.HandlerFunc)) *mSenderMockIncomingMessageRouter {
+	if mmIncomingMessageRouter.mock.inspectFuncIncomingMessageRouter != nil {
+		mmIncomingMessageRouter.mock.t.Fatalf("Inspect function is already set for SenderMock.IncomingMessageRouter")
+	}
+
+	mmIncomingMessageRouter.mock.inspectFuncIncomingMessageRouter = f
+
+	return mmIncomingMessageRouter
+}
+
+// Return sets up results that will be returned by Sender.IncomingMessageRouter
+func (mmIncomingMessageRouter *mSenderMockIncomingMessageRouter) Return(h1 message.HandlerFunc) *SenderMock {
+	if mmIncomingMessageRouter.mock.funcIncomingMessageRouter != nil {
+		mmIncomingMessageRouter.mock.t.Fatalf("SenderMock.IncomingMessageRouter mock is already set by Set")
+	}
+
+	if mmIncomingMessageRouter.defaultExpectation == nil {
+		mmIncomingMessageRouter.defaultExpectation = &SenderMockIncomingMessageRouterExpectation{mock: mmIncomingMessageRouter.mock}
+	}
+	mmIncomingMessageRouter.defaultExpectation.results = &SenderMockIncomingMessageRouterResults{h1}
+	return mmIncomingMessageRouter.mock
+}
+
+//Set uses given function f to mock the Sender.IncomingMessageRouter method
+func (mmIncomingMessageRouter *mSenderMockIncomingMessageRouter) Set(f func(handle message.HandlerFunc) (h1 message.HandlerFunc)) *SenderMock {
+	if mmIncomingMessageRouter.defaultExpectation != nil {
+		mmIncomingMessageRouter.mock.t.Fatalf("Default expectation is already set for the Sender.IncomingMessageRouter method")
+	}
+
+	if len(mmIncomingMessageRouter.expectations) > 0 {
+		mmIncomingMessageRouter.mock.t.Fatalf("Some expectations are already set for the Sender.IncomingMessageRouter method")
+	}
+
+	mmIncomingMessageRouter.mock.funcIncomingMessageRouter = f
+	return mmIncomingMessageRouter.mock
+}
+
+// When sets expectation for the Sender.IncomingMessageRouter which will trigger the result defined by the following
+// Then helper
+func (mmIncomingMessageRouter *mSenderMockIncomingMessageRouter) When(handle message.HandlerFunc) *SenderMockIncomingMessageRouterExpectation {
+	if mmIncomingMessageRouter.mock.funcIncomingMessageRouter != nil {
+		mmIncomingMessageRouter.mock.t.Fatalf("SenderMock.IncomingMessageRouter mock is already set by Set")
+	}
+
+	expectation := &SenderMockIncomingMessageRouterExpectation{
+		mock:   mmIncomingMessageRouter.mock,
+		params: &SenderMockIncomingMessageRouterParams{handle},
+	}
+	mmIncomingMessageRouter.expectations = append(mmIncomingMessageRouter.expectations, expectation)
+	return expectation
+}
+
+// Then sets up Sender.IncomingMessageRouter return parameters for the expectation previously defined by the When method
+func (e *SenderMockIncomingMessageRouterExpectation) Then(h1 message.HandlerFunc) *SenderMock {
+	e.results = &SenderMockIncomingMessageRouterResults{h1}
+	return e.mock
+}
+
+// IncomingMessageRouter implements Sender
+func (mmIncomingMessageRouter *SenderMock) IncomingMessageRouter(handle message.HandlerFunc) (h1 message.HandlerFunc) {
+	mm_atomic.AddUint64(&mmIncomingMessageRouter.beforeIncomingMessageRouterCounter, 1)
+	defer mm_atomic.AddUint64(&mmIncomingMessageRouter.afterIncomingMessageRouterCounter, 1)
+
+	if mmIncomingMessageRouter.inspectFuncIncomingMessageRouter != nil {
+		mmIncomingMessageRouter.inspectFuncIncomingMessageRouter(handle)
+	}
+
+	params := &SenderMockIncomingMessageRouterParams{handle}
+
+	// Record call args
+	mmIncomingMessageRouter.IncomingMessageRouterMock.mutex.Lock()
+	mmIncomingMessageRouter.IncomingMessageRouterMock.callArgs = append(mmIncomingMessageRouter.IncomingMessageRouterMock.callArgs, params)
+	mmIncomingMessageRouter.IncomingMessageRouterMock.mutex.Unlock()
+
+	for _, e := range mmIncomingMessageRouter.IncomingMessageRouterMock.expectations {
+		if minimock.Equal(e.params, params) {
+			mm_atomic.AddUint64(&e.Counter, 1)
+			return e.results.h1
+		}
+	}
+
+	if mmIncomingMessageRouter.IncomingMessageRouterMock.defaultExpectation != nil {
+		mm_atomic.AddUint64(&mmIncomingMessageRouter.IncomingMessageRouterMock.defaultExpectation.Counter, 1)
+		want := mmIncomingMessageRouter.IncomingMessageRouterMock.defaultExpectation.params
+		got := SenderMockIncomingMessageRouterParams{handle}
+		if want != nil && !minimock.Equal(*want, got) {
+			mmIncomingMessageRouter.t.Errorf("SenderMock.IncomingMessageRouter got unexpected parameters, want: %#v, got: %#v%s\n", *want, got, minimock.Diff(*want, got))
+		}
+
+		results := mmIncomingMessageRouter.IncomingMessageRouterMock.defaultExpectation.results
+		if results == nil {
+			mmIncomingMessageRouter.t.Fatal("No results are set for the SenderMock.IncomingMessageRouter")
+		}
+		return (*results).h1
+	}
+	if mmIncomingMessageRouter.funcIncomingMessageRouter != nil {
+		return mmIncomingMessageRouter.funcIncomingMessageRouter(handle)
+	}
+	mmIncomingMessageRouter.t.Fatalf("Unexpected call to SenderMock.IncomingMessageRouter. %v", handle)
+	return
+}
+
+// IncomingMessageRouterAfterCounter returns a count of finished SenderMock.IncomingMessageRouter invocations
+func (mmIncomingMessageRouter *SenderMock) IncomingMessageRouterAfterCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmIncomingMessageRouter.afterIncomingMessageRouterCounter)
+}
+
+// IncomingMessageRouterBeforeCounter returns a count of SenderMock.IncomingMessageRouter invocations
+func (mmIncomingMessageRouter *SenderMock) IncomingMessageRouterBeforeCounter() uint64 {
+	return mm_atomic.LoadUint64(&mmIncomingMessageRouter.beforeIncomingMessageRouterCounter)
+}
+
+// Calls returns a list of arguments used in each call to SenderMock.IncomingMessageRouter.
+// The list is in the same order as the calls were made (i.e. recent calls have a higher index)
+func (mmIncomingMessageRouter *mSenderMockIncomingMessageRouter) Calls() []*SenderMockIncomingMessageRouterParams {
+	mmIncomingMessageRouter.mutex.RLock()
+
+	argCopy := make([]*SenderMockIncomingMessageRouterParams, len(mmIncomingMessageRouter.callArgs))
+	copy(argCopy, mmIncomingMessageRouter.callArgs)
+
+	mmIncomingMessageRouter.mutex.RUnlock()
+
+	return argCopy
+}
+
+// MinimockIncomingMessageRouterDone returns true if the count of the IncomingMessageRouter invocations corresponds
+// the number of defined expectations
+func (m *SenderMock) MinimockIncomingMessageRouterDone() bool {
+	for _, e := range m.IncomingMessageRouterMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			return false
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.IncomingMessageRouterMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterIncomingMessageRouterCounter) < 1 {
+		return false
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcIncomingMessageRouter != nil && mm_atomic.LoadUint64(&m.afterIncomingMessageRouterCounter) < 1 {
+		return false
+	}
+	return true
+}
+
+// MinimockIncomingMessageRouterInspect logs each unmet expectation
+func (m *SenderMock) MinimockIncomingMessageRouterInspect() {
+	for _, e := range m.IncomingMessageRouterMock.expectations {
+		if mm_atomic.LoadUint64(&e.Counter) < 1 {
+			m.t.Errorf("Expected call to SenderMock.IncomingMessageRouter with params: %#v", *e.params)
+		}
+	}
+
+	// if default expectation was set then invocations count should be greater than zero
+	if m.IncomingMessageRouterMock.defaultExpectation != nil && mm_atomic.LoadUint64(&m.afterIncomingMessageRouterCounter) < 1 {
+		if m.IncomingMessageRouterMock.defaultExpectation.params == nil {
+			m.t.Error("Expected call to SenderMock.IncomingMessageRouter")
+		} else {
+			m.t.Errorf("Expected call to SenderMock.IncomingMessageRouter with params: %#v", *m.IncomingMessageRouterMock.defaultExpectation.params)
+		}
+	}
+	// if func was set then invocations count should be greater than zero
+	if m.funcIncomingMessageRouter != nil && mm_atomic.LoadUint64(&m.afterIncomingMessageRouterCounter) < 1 {
+		m.t.Error("Expected call to SenderMock.IncomingMessageRouter")
+	}
 }
 
 type mSenderMockReply struct {
@@ -685,6 +909,8 @@ func (m *SenderMock) MinimockSendTargetInspect() {
 // MinimockFinish checks that all mocked methods have been called the expected number of times
 func (m *SenderMock) MinimockFinish() {
 	if !m.minimockDone() {
+		m.MinimockIncomingMessageRouterInspect()
+
 		m.MinimockReplyInspect()
 
 		m.MinimockSendRoleInspect()
@@ -713,6 +939,7 @@ func (m *SenderMock) MinimockWait(timeout mm_time.Duration) {
 func (m *SenderMock) minimockDone() bool {
 	done := true
 	return done &&
+		m.MinimockIncomingMessageRouterDone() &&
 		m.MinimockReplyDone() &&
 		m.MinimockSendRoleDone() &&
 		m.MinimockSendTargetDone()
