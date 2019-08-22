@@ -163,7 +163,7 @@ func MemberMigrationCreate(t *testing.T) MemberObject {
 
 	request := insolar_api.MemberMigrationCreateRequest{
 		Jsonrpc: JSONRPCVersion,
-		Id:      1,
+		Id:      GetRequestId(),
 		Method:  ContractCall,
 		Params: insolar_api.MemberMigrationCreateRequestParams{
 			Seed:       seed,
@@ -212,7 +212,7 @@ func (member *MemberObject) DepositTransfer(t *testing.T) insolar_api.DepositTra
 
 	request := insolar_api.DepositTransferRequest{
 		Jsonrpc: JSONRPCVersion,
-		Id:      1,
+		Id:      GetRequestId(),
 		Method:  ContractCall,
 		Params: insolar_api.DepositTransferRequestParams{
 			Seed:     GetSeed(t),
